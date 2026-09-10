@@ -61,6 +61,9 @@ a page low in records and high in garbage is waiting for purge`,
 	"replay": `The redo records of this page, applied one at a time with n and p.
 each step writes what the record says and moves FIL_PAGE_LSN forward
 a record the page has already seen is skipped, as recovery skips it`,
+	"clustered index": `The primary key this record stores, which is where the row itself is.
+a secondary index leaf holds its key columns and the PK, nothing else
+enter looks the PK up in the clustered index, the read a query makes next`,
 	"versions": `Older versions of this row, rebuilt by following DB_ROLL_PTR.
 each step reads one undo record and puts its old column values back
 v sets a read view: the newest version it counts as committed is marked`,

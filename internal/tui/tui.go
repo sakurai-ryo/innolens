@@ -298,6 +298,8 @@ func (m *Model) enter() {
 		if !d.Zero() {
 			m.jumpToUndo(d)
 		}
+	case clustRef:
+		m.findIn(d.ix, d.key)
 	case pageJump:
 		m.jumpToPage(d.space, d.page)
 	case *innodb.Node:
@@ -428,6 +430,7 @@ func (m *Model) showPage(space uint32, t *innodb.Table, p *innodb.Page, from str
 	root, err := annotate(t, p)
 	tree := annTree(root)
 	m.addVersions(tree, p)
+	m.addClusterLinks(tree, p)
 	if m.diff != nil {
 		tree.children = append([]*node{annTree(m.diff.sect)}, tree.children...)
 	}

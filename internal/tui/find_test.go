@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/sakurai-ryo/innolens/internal/innodb"
 )
 
 // TestFindKey searches the clustered index for a key and follows the descent it
@@ -96,4 +97,73 @@ func TestFindKey(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestClusterLink follows the link a secondary index leaf record has to the
+// clustered index: enter on it runs the PK lookup and lands on the row.
+func TestClusterLink(t *testing.T) {
+	for _, ver := range []string{"80", "84"} {
+		t.Run(ver, func(t *testing.T) {
+			m, err := New(filepath.Join("..", "..", "test", "testdata", ver), "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
+			m.tables.cur = tableIdx(&m.tables, "types")
+			press(m, tea.KeyEnter)
+			openSecondaryLeaf(t, m)
+			expandAll(&m.ann)
+
+			link := findRow(&m.ann, "clustered index")
+			ref, ok := link.data.(clustRef)
+			if !ok || ref.ix.Name != "PRIMARY" {
+				t.Fatalf("the link does not point at the clustered index: %q %v", link.value, link.data)
+			}
+			if !strings.Contains(link.value, "PRIMARY  id="+ref.key) {
+				t.Fatalf("link row = %q, key %q", link.value, ref.key)
+			}
+
+			m.ann.cur = indexOf(&m.ann, "clustered index")
+			press(m, tea.KeyEnter)
+			if m.status.err != "" {
+				t.Fatalf("enter on the link: %s", m.status)
+			}
+			if want := "FIND " + ref.key + " IN PRIMARY"; !strings.Contains(m.pagesTitle, want) {
+				t.Fatalf("pane title = %q, want %q", m.pagesTitle, want)
+			}
+			leaf := m.pages.rows[len(m.pages.rows)-1].n
+			if _, ok := leaf.data.(recRef); !ok {
+				t.Fatalf("the descent did not reach the record: %q %v", leaf.label, leaf.note)
+			}
+			m.pages.cur = len(m.pages.rows) - 1
+			press(m, tea.KeyEnter)
+			if id := findRow(&m.ann, "record @").children; len(id) == 0 {
+				t.Fatal("the record has no columns")
+			}
+			if got := field(m.ann.sel().data.(*innodb.Node), "id"); got == nil || got.Value != ref.key {
+				t.Fatalf("landed on id %v, want %s", got, ref.key)
+			}
+		})
+	}
+}
+
+// openSecondaryLeaf opens the first leaf page of the idx_varchar B+tree.
+func openSecondaryLeaf(t *testing.T, m *Model) {
+	t.Helper()
+	i := indexOf(&m.pages, "idx_varchar")
+	if i < 0 {
+		t.Fatalf("no idx_varchar in the page tree: %v", rowLabels(&m.pages))
+	}
+	for ; i < len(m.pages.rows); i++ {
+		m.pages.cur = i
+		m.pages.expand()
+		if strings.Contains(m.pages.rows[i].n.label, "INDEX leaf") {
+			press(m, tea.KeyEnter)
+			if m.focus != focusDetail {
+				t.Fatalf("the leaf page did not open: %s", m.status)
+			}
+			return
+		}
+	}
+	t.Fatal("no leaf page under idx_varchar")
 }
