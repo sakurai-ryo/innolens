@@ -194,17 +194,17 @@ type iconSet struct {
 	collapsed, expanded            string
 	schema, table, system, redo    string
 	page, index, record, mtr, warn string
-	delta, undo                    string
+	delta, undo, lock              string
 }
 
 var nerdIcons = iconSet{
 	collapsed: "\u25b8", expanded: "\u25be",
 	schema: "\uf07b", table: "\uf1c0", system: "\uf15b", redo: "\uf1da",
 	page: "\uf15c", index: "\uf0e8", record: "\uf0ca", mtr: "\uf0e7", warn: "\uf071",
-	delta: "\uf0ec", undo: "\uf0e2",
+	delta: "\uf0ec", undo: "\uf0e2", lock: "\uf023",
 }
 
-var plainIcons = iconSet{collapsed: "▸", expanded: "▾", warn: "!", delta: "Δ", undo: "↺"}
+var plainIcons = iconSet{collapsed: "▸", expanded: "▾", warn: "!", delta: "Δ", undo: "↺", lock: "⚿"}
 
 var ic = pickIcons()
 

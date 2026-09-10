@@ -35,35 +35,51 @@ type DescentStep struct {
 // multi-column key is only narrowed down to its first column, and a collation
 // that does not sort like Go's string compare will disagree on the boundary.
 func (s *Space) Descend(idx *IndexDef, key string) ([]DescentStep, error) {
+	out, leaf, pos, err := s.descend(idx, key)
+	if err != nil {
+		return out, err
+	}
+	st := &out[len(out)-1]
+	if recs := leaf.UserRecs(); pos < len(recs) {
+		st.Slot, st.Key, st.RecOff, st.Found = pos, recKey(recs[pos]), recs[pos].Off, compareKey(key, recKey(recs[pos])) == 0
+	}
+	if !st.Found {
+		return out, fmt.Errorf("no record with key %q in %s", key, idx.Name)
+	}
+	return out, nil
+}
+
+// descend is the walk itself. It ends on the leaf page the key belongs to and
+// the position of the first user record that does not sort before the key,
+// which is len(UserRecs()) when every record does: the cursor is then on the
+// supremum. An empty key sorts before everything, so it lands on the first
+// record of the leftmost leaf.
+func (s *Space) descend(idx *IndexDef, key string) ([]DescentStep, *IndexPage, int, error) {
 	if idx == nil {
-		return nil, fmt.Errorf("no index definition to search with")
+		return nil, nil, 0, fmt.Errorf("no index definition to search with")
 	}
 	var out []DescentStep
 	for no := idx.RootPage; ; {
 		p, err := s.Page(no)
 		if err != nil {
-			return out, err
+			return out, nil, 0, err
 		}
 		ip, err := p.ParseIndex(idx)
 		if err != nil {
-			return out, fmt.Errorf("page %d: %w", no, err)
+			return out, nil, 0, fmt.Errorf("page %d: %w", no, err)
 		}
 		st := DescentStep{PageNo: no, Level: ip.Hdr.Level, NRecs: ip.Hdr.NRecs, Slot: -1}
 		recs := ip.UserRecs()
 		if ip.Hdr.Level == 0 {
+			pos := len(recs)
 			for i, rec := range recs {
-				c := compareKey(key, recKey(rec))
-				if c > 0 {
-					continue
+				if compareKey(key, recKey(rec)) <= 0 {
+					pos = i
+					break
 				}
-				st.Slot, st.Key, st.RecOff, st.Found = i, recKey(rec), rec.Off, c == 0
-				break
 			}
 			out = append(out, st)
-			if !st.Found {
-				return out, fmt.Errorf("no record with key %q in %s", key, idx.Name)
-			}
-			return out, nil
+			return out, ip, pos, nil
 		}
 		for i, rec := range recs {
 			// The first record of a non-leaf page carries the min_rec flag: it
@@ -75,11 +91,11 @@ func (s *Space) Descend(idx *IndexDef, key string) ([]DescentStep, error) {
 		}
 		if st.Slot < 0 {
 			out = append(out, st)
-			return out, fmt.Errorf("page %d has no node pointer to follow", no)
+			return out, nil, 0, fmt.Errorf("page %d has no node pointer to follow", no)
 		}
 		out = append(out, st)
 		if len(out) >= maxTreeHeight {
-			return out, fmt.Errorf("the tree is deeper than %d levels: the node pointers loop", maxTreeHeight)
+			return out, nil, 0, fmt.Errorf("the tree is deeper than %d levels: the node pointers loop", maxTreeHeight)
 		}
 		no = st.Child
 	}

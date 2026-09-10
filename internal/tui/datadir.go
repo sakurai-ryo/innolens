@@ -134,10 +134,24 @@ func (d *datadir) schemaNode(dir, schema string) *node {
 	return n
 }
 
+// createTableNode heads the page tree with the table definition, folded: one
+// line of CREATE TABLE per row once opened.
+func createTableNode(t *innodb.Table) *node {
+	n := &node{label: "CREATE TABLE " + t.Name, icon: ic.table, hkey: "CREATE TABLE",
+		note: fmt.Sprintf("%d line(s), from the SDI", len(t.DDL))}
+	for _, l := range t.DDL {
+		n.children = append(n.children, &node{label: l, hkey: "CREATE TABLE"})
+	}
+	return n
+}
+
 // pageTree builds the right pane: one section per B+tree plus the flat list of
 // non-index pages. Only the root of each tree is read up front.
 func pageTree(s *innodb.Space, t *innodb.Table) *node {
 	root := &node{}
+	if t != nil && len(t.DDL) > 0 {
+		root.children = append(root.children, createTableNode(t))
+	}
 	for _, ix := range indexes(t) {
 		n := &node{label: fmt.Sprintf("%s (index %d)", ix.Name, ix.ID), icon: ic.index, hkey: "index tree",
 			expanded: true, data: indexRef{ix}}

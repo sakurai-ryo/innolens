@@ -1,0 +1,6 @@
+# idx_varchar	x = varchar-125-xxxxx
+# SELECT * FROM types WHERE c_varchar = 'varchar-125-xxxxx' FOR UPDATE
+LOCK_TYPE	INDEX_NAME	LOCK_MODE	LOCK_STATUS	page_no	heap_no	lock_data
+RECORD	idx_varchar	X	GRANTED	16	279	'varchar-125-xxxxx', 125
+RECORD	idx_varchar	X,GAP	GRANTED	16	283	'varchar-1251-xxxxxxxxxxx', 1251
+TABLE	NULL	IX	GRANTED			

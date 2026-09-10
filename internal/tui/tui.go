@@ -48,6 +48,8 @@ type Model struct {
 	// the read view the version chains are marked against.
 	rep        *replay
 	view       readView
+	locks      *lockSet // the last `l`: marked on every page opened while it stands
+	lockWiz    *lockWizard
 	base       string // baseline datadir the page detail diffs against; "" if none
 	hexTop     int
 	pagesTitle string
@@ -62,6 +64,7 @@ type status struct {
 	color                   lipgloss.Color
 	delta                   string
 	view                    string // the read view in force, "" when none
+	locks                   string // the lock statement in force, "" when none
 	info                    string
 	// notice is a banner line under the bar for an action whose effect is off
 	// screen, so that a keypress is never silent. The next keystroke clears it.
@@ -72,7 +75,7 @@ type status struct {
 // segments are the bar's parts in order; empty ones are dropped.
 func (s status) segments() []string {
 	var segs []string
-	for _, seg := range []string{s.table, s.space, s.page, s.tag, s.delta, s.view, s.info} {
+	for _, seg := range []string{s.table, s.space, s.page, s.tag, s.delta, s.view, s.locks, s.info} {
 		if seg != "" {
 			segs = append(segs, seg)
 		}
@@ -123,7 +126,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case focusDetail:
 				m.focus, m.page = focusPages, nil
 			case focusPages:
-				if strings.HasPrefix(m.pagesTitle, "FIND ") && m.space != nil {
+				if m.lockWiz != nil {
+					m.lockBack()
+					break
+				}
+				if (strings.HasPrefix(m.pagesTitle, "FIND ") || strings.HasPrefix(m.pagesTitle, "LOCKS ")) && m.space != nil {
 					m.openTable(m.space.Path)
 					break
 				}
@@ -144,6 +151,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cur().expand()
 		case "r":
 			m.reload()
+		case "l":
+			if m.focus == focusPages && m.searchable() && m.lockWiz == nil {
+				m.startLock()
+			}
 		case "n":
 			m.replayStep(1)
 		case "p":
@@ -165,10 +176,12 @@ const (
 	promptFilter
 	promptFind
 	promptView
+	promptLock
 )
 
 // prompt is the one-line text input the panes share: `/` filters the datadir,
-// `f` searches an index for a key, `v` sets the read view.
+// `f` searches an index for a key, `v` sets the read view, and the `l` picker
+// asks for its key values through one.
 type prompt struct {
 	kind int
 	text string
@@ -178,7 +191,7 @@ func promptOwner(kind int) int {
 	switch kind {
 	case promptFilter:
 		return focusTables
-	case promptFind:
+	case promptFind, promptLock:
 		return focusPages
 	case promptView:
 		return focusDetail
@@ -246,6 +259,9 @@ func (m *Model) closePrompt() {
 		m.setQuery("")
 	}
 	m.prompt = prompt{}
+	if m.lockWiz != nil {
+		m.lockBack()
+	}
 }
 
 func (m *Model) commitPrompt() {
@@ -254,6 +270,12 @@ func (m *Model) commitPrompt() {
 		m.findKey(m.prompt.text)
 	case promptView:
 		m.setReadView(m.prompt.text)
+	case promptLock:
+		// lockValue decides whether the prompt stays open for a second key.
+		text := m.prompt.text
+		m.prompt = prompt{}
+		m.lockValue(text)
+		return
 	}
 	m.prompt = prompt{}
 }
@@ -300,21 +322,32 @@ func (m *Model) enter() {
 		}
 	case clustRef:
 		m.findIn(d.ix, d.key)
+	case lockChoice:
+		m.lockPick(d)
 	case pageJump:
 		m.jumpToPage(d.space, d.page)
 	case *innodb.Node:
+		var off int
 		if rp, ok := d.Ref.(innodb.RollPtr); ok {
 			m.jumpToUndo(rp)
+		} else if _, err := fmt.Sscanf(d.Name, "record @%x", &off); err == nil {
+			// A row that stands for a record, such as a lock, selects it.
+			m.selectRecord(off)
 		}
 	}
 }
 
 func (m *Model) openTable(path string) {
 	if m.space != nil {
+		// The locks of a statement belong to its table: they stay through a
+		// reload or a return from a search, and go with the table.
+		if m.space.Path != path {
+			m.locks = nil
+		}
 		m.space.Close()
 		m.space = nil
 	}
-	m.table, m.page = nil, nil
+	m.table, m.page, m.lockWiz = nil, nil, nil
 	s, err := innodb.Open(path)
 	if err != nil {
 		m.status = status{err: err.Error()}
@@ -334,6 +367,7 @@ func (m *Model) openTable(path string) {
 	m.status = status{
 		table: name,
 		space: fmt.Sprintf("space %d", s.ID),
+		locks: m.locks.String(),
 		info:  fmt.Sprintf("%d pages", s.NPages),
 	}
 	if err != nil && !innodb.IsUndoSpace(s.ID) {
@@ -431,6 +465,7 @@ func (m *Model) showPage(space uint32, t *innodb.Table, p *innodb.Page, from str
 	tree := annTree(root)
 	m.addVersions(tree, p)
 	m.addClusterLinks(tree, p)
+	m.addLocks(tree, p)
 	if m.diff != nil {
 		tree.children = append([]*node{annTree(m.diff.sect)}, tree.children...)
 	}
@@ -575,10 +610,14 @@ func (m *Model) footer() string {
 		keys = "find key: " + m.prompt.text + "▏   enter search   esc cancel"
 	case m.prompt.kind == promptView:
 		keys = "read view trx_id: " + m.prompt.text + "▏   enter apply   esc cancel"
+	case m.prompt.kind == promptLock:
+		keys = m.lockWiz.lockValueLabel() + ": " + m.prompt.text + "▏   enter next   esc back"
+	case m.lockWiz != nil:
+		keys = "↑↓ move   enter choose   esc back"
 	case m.focus == focusTables:
 		keys = "↑↓ move   ←→ fold   enter open   / search   esc quit   r reload   ? help"
 	case m.focus == focusPages && m.searchable():
-		keys = "↑↓ move   ←→ fold   enter open   f find key   esc back   r reload   ? help"
+		keys = "↑↓ move   ←→ fold   enter open   f find key   l locks   esc back   r reload   ? help"
 	case m.focus == focusDetail:
 		keys = "↑↓ move   enter follow   n/p replay redo   v read view   esc back   r reload   ? help"
 	}

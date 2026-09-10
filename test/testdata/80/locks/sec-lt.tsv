@@ -1,0 +1,9 @@
+# idx_varchar	x < varchar-1000
+# SELECT * FROM types WHERE c_varchar < 'varchar-1000' FOR UPDATE
+LOCK_TYPE	INDEX_NAME	LOCK_MODE	LOCK_STATUS	page_no	heap_no	lock_data
+RECORD	idx_varchar	X	GRANTED	16	2	'varchar-1-x', 1
+RECORD	idx_varchar	X	GRANTED	16	3	'varchar-10-xxxxxxxxxx', 10
+RECORD	idx_varchar	X	GRANTED	16	6	'varchar-1001-x', 1001
+RECORD	PRIMARY	X,REC_NOT_GAP	GRANTED	8	2	1
+RECORD	PRIMARY	X,REC_NOT_GAP	GRANTED	8	11	10
+TABLE	NULL	IX	GRANTED			

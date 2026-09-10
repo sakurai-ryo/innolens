@@ -1,0 +1,7 @@
+# idx_varchar	share = varchar-101-x
+# SELECT * FROM types WHERE c_varchar = 'varchar-101-x' LOCK IN SHARE MODE
+LOCK_TYPE	INDEX_NAME	LOCK_MODE	LOCK_STATUS	page_no	heap_no	lock_data
+RECORD	idx_varchar	S	GRANTED	16	15	'varchar-101-x', 101
+RECORD	idx_varchar	S,GAP	GRANTED	16	16	'varchar-1010-xxxxxxxxxx', 1010
+RECORD	PRIMARY	S,REC_NOT_GAP	GRANTED	9	49	101
+TABLE	NULL	IS	GRANTED			

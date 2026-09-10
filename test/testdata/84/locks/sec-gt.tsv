@@ -1,0 +1,7 @@
+# idx_varchar	x > varchar-999
+# SELECT * FROM types WHERE c_varchar > 'varchar-999' FOR UPDATE
+LOCK_TYPE	INDEX_NAME	LOCK_MODE	LOCK_STATUS	page_no	heap_no	lock_data
+RECORD	idx_varchar	X	GRANTED	20	1	supremum pseudo-record
+RECORD	idx_varchar	X	GRANTED	20	245	'varchar-999-xxxxxxxxxxxxxxxxxxx', 999
+RECORD	PRIMARY	X,REC_NOT_GAP	GRANTED	23	19	999
+TABLE	NULL	IX	GRANTED			

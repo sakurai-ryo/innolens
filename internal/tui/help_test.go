@@ -54,7 +54,7 @@ func TestHelpPanel(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
 	m.tables.cur = tableIdx(&m.tables, "types")
 	press(m, tea.KeyEnter)
-	m.pages.cur = 1
+	m.pages.cur = indexOf(&m.pages, "PRIMARY (index") + 1 // root page of PRIMARY
 	press(m, tea.KeyEnter)
 	if m.focus != focusDetail {
 		t.Fatalf("detail view not open: %s", m.status)

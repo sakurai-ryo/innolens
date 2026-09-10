@@ -1,0 +1,6 @@
+# idx_varchar	rc x = varchar-101-x
+# SELECT * FROM types WHERE c_varchar = 'varchar-101-x' FOR UPDATE
+LOCK_TYPE	INDEX_NAME	LOCK_MODE	LOCK_STATUS	page_no	heap_no	lock_data
+RECORD	idx_varchar	X,REC_NOT_GAP	GRANTED	16	15	'varchar-101-x', 101
+RECORD	PRIMARY	X,REC_NOT_GAP	GRANTED	9	49	101
+TABLE	NULL	IX	GRANTED			

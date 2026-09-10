@@ -70,7 +70,7 @@ func TestBrowse(t *testing.T) {
 					t.Fatalf("page tree %v missing %q", pageRows, want)
 				}
 			}
-			root := m.pages.rows[1].n // root page of PRIMARY
+			root := m.pages.rows[indexOf(&m.pages, "PRIMARY (index")+1].n // root page of PRIMARY
 			if !strings.HasPrefix(root.label, "page ") || !strings.Contains(root.label, "level 1") {
 				t.Fatalf("PRIMARY root label = %q, want a level 1 page", root.label)
 			}
@@ -79,7 +79,7 @@ func TestBrowse(t *testing.T) {
 			if len(root.children) != 0 {
 				t.Fatal("child pages loaded before expand")
 			}
-			m.pages.cur = 1
+			m.pages.cur = indexOf(&m.pages, "PRIMARY (index") + 1
 			press(m, tea.KeyRight)
 			if len(root.children) == 0 {
 				t.Fatal("expand did not load child pages")
@@ -150,7 +150,7 @@ func TestDeepPage(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
 	m.tables.cur = tableIdx(&m.tables, "instant")
 	press(m, tea.KeyEnter)
-	m.pages.cur = 1
+	m.pages.cur = indexOf(&m.pages, "PRIMARY (index") + 1 // root page of PRIMARY
 	press(m, tea.KeyEnter)
 	if m.focus != focusDetail {
 		t.Fatalf("detail view not open: %s", m.status)
@@ -319,4 +319,29 @@ func TestNoticeDialog(t *testing.T) {
 		}
 	}
 	t.Log("\n" + m.View())
+}
+
+// TestCreateTableNode opens a table and reads its definition off the top of
+// the page tree, folded until expanded.
+func TestCreateTableNode(t *testing.T) {
+	m, err := New(filepath.Join("..", "..", "test", "testdata", "80"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
+	m.tables.cur = tableIdx(&m.tables, "types")
+	press(m, tea.KeyEnter)
+	rows := rowLabels(&m.pages)
+	if rows[0] != "CREATE TABLE types" {
+		t.Fatalf("first row = %q", rows[0])
+	}
+	if hasLabel(rows, "  `id` int") {
+		t.Fatal("the statement is unfolded before expand")
+	}
+	m.pages.cur = 0
+	press(m, tea.KeyRight)
+	rows = rowLabels(&m.pages)
+	if rows[1] != "CREATE TABLE `types` (" || !hasLabel(rows, "  `id` int NOT NULL AUTO_INCREMENT,") || !hasLabel(rows, ") ENGINE=InnoDB") {
+		t.Errorf("expanded rows = %v", rows[:5])
+	}
 }

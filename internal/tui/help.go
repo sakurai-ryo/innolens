@@ -73,6 +73,18 @@ enter opens the undo record that holds it`,
 	"no earlier version": `The chain ends at an insert: the row did not exist before it.
 insert undo only records the key, enough to remove the row on rollback
 it is discarded at commit, so an older chain may just be gone`,
+	"CREATE TABLE": `The table as SHOW CREATE TABLE would print it, rebuilt from the SDI.
+the SDI is the data dictionary copy stored in the tablespace itself
+the AUTO_INCREMENT counter is not in it, and partitioning is only noted`,
+	"lock statement": `One choice of the l picker: the statement is put together step by step.
+isolation level, then the statement, the index to scan, the comparison
+only the key values are typed; esc goes back one step`,
+	"locks": `Record locks the statement given to l takes, worked out from the tree.
+one per index record the scan reads, plus the row behind a secondary entry
+none of this is on disk: a server keeps its locks in memory, per transaction`,
+	"lock": `One record lock, spelled as performance_schema.data_locks would.
+X or S alone is next-key, the record and the gap before it; ,GAP is the gap
+,REC_NOT_GAP the record only; on the supremum, the gap after the last record`,
 	"descent": `One page of a key lookup, root first, one page per level of the tree.
 a node page picks the last child whose key does not sort after the key
 the leaf row is where the record is, or where it would be inserted`,

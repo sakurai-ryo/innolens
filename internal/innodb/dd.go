@@ -65,6 +65,14 @@ type ddColumn struct {
 	Elements          []struct {
 		Name string `json:"name"`
 	} `json:"elements"`
+	// What SHOW CREATE TABLE needs beyond the layout.
+	IsAutoIncrement     bool   `json:"is_auto_increment"`
+	IsExplicitCollation bool   `json:"is_explicit_collation"`
+	HasNoDefault        bool   `json:"has_no_default"`
+	DefaultOption       string `json:"default_option"`
+	UpdateOption        string `json:"update_option"`
+	GenerationExprUTF8  string `json:"generation_expression_utf8"`
+	Comment             string `json:"comment"`
 }
 
 type ddIndex struct {
@@ -75,6 +83,23 @@ type ddIndex struct {
 		ColumnOpx int  `json:"column_opx"`
 		Length    uint `json:"length"`
 		Hidden    bool `json:"hidden"`
+		Order     int  `json:"order"` // 2 ASC, 3 DESC
+	} `json:"elements"`
+	Algorithm           int    `json:"algorithm"` // 2 BTREE, 3 RTREE, 4 HASH, 5 FULLTEXT
+	IsAlgorithmExplicit bool   `json:"is_algorithm_explicit"`
+	IsVisible           bool   `json:"is_visible"`
+	Comment             string `json:"comment"`
+}
+
+type ddForeignKey struct {
+	Name                      string `json:"name"`
+	UpdateRule                int    `json:"update_rule"` // 1 NO ACTION, 2 RESTRICT, 3 CASCADE, 4 SET NULL, 5 SET DEFAULT
+	DeleteRule                int    `json:"delete_rule"`
+	ReferencedTableSchemaName string `json:"referenced_table_schema_name"`
+	ReferencedTableName       string `json:"referenced_table_name"`
+	Elements                  []struct {
+		ColumnOpx            int    `json:"column_opx"`
+		ReferencedColumnName string `json:"referenced_column_name"`
 	} `json:"elements"`
 }
 
@@ -85,13 +110,26 @@ type ddTable struct {
 	RowFormat   int        `json:"row_format"`
 	Columns     []ddColumn `json:"columns"`
 	Indexes     []ddIndex  `json:"indexes"`
+	// What SHOW CREATE TABLE needs beyond the layout.
+	Engine           string         `json:"engine"`
+	CollationID      int            `json:"collation_id"`
+	Comment          string         `json:"comment"`
+	Options          string         `json:"options"`
+	PartitionType    int            `json:"partition_type"`
+	ForeignKeys      []ddForeignKey `json:"foreign_keys"`
+	CheckConstraints []struct {
+		Name            string `json:"name"`
+		State           int    `json:"constraint_state"` // 1 ENFORCED
+		CheckClauseUTF8 string `json:"check_clause_utf8"`
+	} `json:"check_constraints"`
 }
 
 // Table is the decoded table definition of one tablespace.
 type Table struct {
 	Schema, Name string
 	Indexes      []*IndexDef
-	JSON         []byte // pretty-printed SDI
+	JSON         []byte   // pretty-printed SDI
+	DDL          []string // CREATE TABLE as SHOW CREATE TABLE prints it, one line each
 }
 
 func (t *Table) Index(id uint64) *IndexDef {
@@ -149,7 +187,7 @@ func buildTable(dt *ddTable) (*Table, error) {
 	if dt.RowFormat != 2 && dt.RowFormat != 3 {
 		return nil, fmt.Errorf("unsupported row_format %d (only COMPACT/DYNAMIC)", dt.RowFormat)
 	}
-	t := &Table{Schema: dt.SchemaRef, Name: dt.Name}
+	t := &Table{Schema: dt.SchemaRef, Name: dt.Name, DDL: createTable(dt)}
 	cols := make([]Col, len(dt.Columns))
 	for i := range dt.Columns {
 		cols[i] = buildCol(&dt.Columns[i])
@@ -161,13 +199,14 @@ func buildTable(dt *ddTable) (*Table, error) {
 		sp := sePrivate(di.SePrivateData)
 		id, _ := strconv.ParseUint(sp["id"], 10, 64)
 		root, _ := strconv.ParseUint(sp["root"], 10, 32)
-		ix := &IndexDef{Name: di.Name, TableID: dt.SePrivateID, ID: id, RootPage: uint32(root)}
+		ix := &IndexDef{Name: di.Name, TableID: dt.SePrivateID, ID: id, RootPage: uint32(root), Unique: di.Type <= 2}
 		nKey := 0
 		for _, e := range di.Elements {
 			if !e.Hidden {
 				nKey++
 			}
 		}
+		ix.NKey = nKey
 		switch {
 		case di.Type == 1 && hasPhysicalPos(dt.Columns):
 			// Instant ADD/DROP rewrites the physical order; dropped columns only exist here.

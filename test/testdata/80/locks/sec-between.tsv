@@ -1,0 +1,7 @@
+# idx_varchar	x varchar-1998-..varchar-1999-
+# SELECT * FROM types WHERE c_varchar BETWEEN 'varchar-1998-' AND 'varchar-1999-' FOR UPDATE
+LOCK_TYPE	INDEX_NAME	LOCK_MODE	LOCK_STATUS	page_no	heap_no	lock_data
+RECORD	idx_varchar	X	GRANTED	38	289	'varchar-1998-xxxxxxxxxxxxxxxxxx', 1998
+RECORD	idx_varchar	X	GRANTED	38	290	'varchar-1999-xxxxxxxxxxxxxxxxxxx', 1999
+RECORD	PRIMARY	X,REC_NOT_GAP	GRANTED	40	27	1998
+TABLE	NULL	IX	GRANTED			

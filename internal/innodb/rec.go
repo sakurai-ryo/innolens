@@ -47,6 +47,8 @@ type IndexDef struct {
 	RootPage      uint32
 	Cols          []Col // physical order of leaf records
 	NUniqueInTree int   // key fields stored in node pointer records
+	NKey          int   // columns the index is declared on, before the PK a secondary index appends
+	Unique        bool  // PRIMARY or UNIQUE: one row per key, so an exact match needs no gap lock
 }
 
 func (d *IndexDef) nullableIn(v uint8) int {

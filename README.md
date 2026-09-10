@@ -33,6 +33,8 @@ page against the same page in `before`.
   structural annotations that highlights the bytes it describes.
 - Records decoded into column values using the table's SDI, including layouts
   rewritten by instant `ADD`/`DROP COLUMN`.
+- A `CREATE TABLE` entry at the top of each table's page tree: the statement as
+  `SHOW CREATE TABLE` prints it, rebuilt from the SDI.
 - Redo log browser: everything after the last checkpoint as an mtr → record tree.
 - Redo replay: `n` and `p` step the records of a page onto its bytes the way
   recovery would, one at a time, with the changed bytes underlined. A record the
@@ -48,6 +50,14 @@ page against the same page in `before`.
 - A `clustered index` link under every secondary index leaf record: it shows the
   primary key the record stores, and `enter` looks that key up in the clustered
   index as the descent above.
+- Lock simulation with `l`: pick the isolation level, the statement (locking
+  read, `UPDATE` or `DELETE`), the index and the comparison step by step, type
+  the key, and the pages the statement locks are listed. Each page then marks
+  the locked records and gets a `locks` section spelling every lock the way
+  `data_locks` would: next-key, gap or record-only, under REPEATABLE READ or
+  READ COMMITTED. Locks live in server memory, not on disk, so these are worked
+  out from the tree with the rules of `row_search_mvcc`, and checked against a
+  real server.
 - Undo tablespaces browsable on their own.
 - The `PAGE_FREE list` of a page says why each record is on it: purge took a
   delete-marked one off, or a page split left behind the run it moved.
