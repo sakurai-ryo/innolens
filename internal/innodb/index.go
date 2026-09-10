@@ -165,7 +165,8 @@ func (ip *IndexPage) annotate(root *Node) {
 	}
 	free := root.Group("PAGE_FREE list")
 	for _, rec := range ip.Free {
-		rec.Annotate(free)
+		n := rec.Annotate(free)
+		n.Value += ", " + freeReason(rec)
 	}
 
 	dir := root.Group("Page directory")
@@ -197,6 +198,18 @@ func (ip *IndexPage) usage() *Node {
 	add("page directory", freeOff, dir, dir)
 	add("FIL trailer", PageSize-FIL_PAGE_DATA_END, FIL_PAGE_DATA_END, FIL_PAGE_DATA_END)
 	return g
+}
+
+// freeReason is why a record is on the free list, which is what its delete-mark
+// bit says. Purge frees a record that was delete-marked first, so that row is
+// gone. A page split frees the run of records it moved to the sibling page, and
+// a rolled-back insert frees one that was never deleted: those bytes are a
+// stale copy of a row that lived on, wherever it is now.
+func freeReason(rec *Rec) string {
+	if rec.Deleted() {
+		return "freed by purge: the row is gone"
+	}
+	return "freed without a delete: left by a page split or a rolled-back insert"
 }
 
 func (rec *Rec) label() string {

@@ -49,6 +49,8 @@ page against the same page in `before`.
   primary key the record stores, and `enter` looks that key up in the clustered
   index as the descent above.
 - Undo tablespaces browsable on their own.
+- The `PAGE_FREE list` of a page says why each record is on it: purge took a
+  delete-marked one off, or a page split left behind the run it moved.
 - Reload with `r`, which underlines the bytes that changed since the last read and
   adds a `changes` section to the annotation tree.
 - Context help with `?`, explaining the item under the cursor.

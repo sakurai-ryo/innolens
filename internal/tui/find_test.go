@@ -123,6 +123,24 @@ func TestClusterLink(t *testing.T) {
 				t.Fatalf("link row = %q, key %q", link.value, ref.key)
 			}
 
+			// A freed record keeps its key, so the free list is linked as well.
+			for _, sec := range m.ann.root.children {
+				if sec.label != "PAGE_FREE list" || len(sec.children) == 0 {
+					continue
+				}
+				linked := 0
+				for _, rec := range sec.children {
+					for _, c := range rec.children {
+						if c.label == "clustered index" {
+							linked++
+						}
+					}
+				}
+				if linked != len(sec.children) {
+					t.Errorf("%d of %d freed records are linked", linked, len(sec.children))
+				}
+			}
+
 			m.ann.cur = indexOf(&m.ann, "clustered index")
 			press(m, tea.KeyEnter)
 			if m.status.err != "" {

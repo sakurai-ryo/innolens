@@ -353,3 +353,50 @@ func TestPageUsage(t *testing.T) {
 		})
 	}
 }
+
+// TestFreeListReason checks the two ways a record reaches the free list on the
+// same page: purge of a delete-marked row, and the run a page split moved to
+// the sibling, whose keys are still reachable from the root.
+func TestFreeListReason(t *testing.T) {
+	for _, ver := range versions {
+		t.Run(ver, func(t *testing.T) {
+			s, tbl := openTable(t, ver, "types")
+			idx := tbl.Indexes[0]
+			var ip *IndexPage
+			for _, l := range leaves(t, s, idx) {
+				if len(l.Free) > 1 {
+					ip = l
+					break
+				}
+			}
+			if ip == nil {
+				t.Skip("no leaf page with a free list")
+			}
+			bytes, purged, moved := 0, 0, 0
+			for _, rec := range ip.Free {
+				bytes += rec.End - rec.Off + rec.Extra
+				if rec.Deleted() {
+					purged++
+					continue
+				}
+				// Freed without a delete, so the record here is a stale copy of
+				// a row the split moved. The row may have been deleted since,
+				// but at least one of them is still where the split put it.
+				steps, err := s.Descend(idx, fields(rec)["id"])
+				if err == nil && steps[len(steps)-1].PageNo != ip.No {
+					moved++
+				}
+			}
+			if purged == 0 {
+				t.Errorf("page %d free list holds no purged record", ip.No)
+			}
+			if moved == 0 {
+				t.Errorf("page %d free list holds no record whose row moved to another page", ip.No)
+			}
+			// The free list is exactly what PAGE_GARBAGE accounts for.
+			if bytes != int(ip.Hdr.Garbage) {
+				t.Errorf("free list is %d bytes, PAGE_GARBAGE says %d", bytes, ip.Hdr.Garbage)
+			}
+		})
+	}
+}

@@ -43,9 +43,9 @@ also where the SDI root page number lives`,
 	"Records": `The user records in heap order, the order they were inserted.
 key order is the next chain in each record header, not this list
 infimum and supremum bracket that chain and hold no data`,
-	"PAGE_FREE list": `Records that were deleted and whose space can be reused.
-PAGE_GARBAGE counts the bytes sitting in here
-an insert reuses one of these before it takes space from the heap`,
+	"PAGE_FREE list": `Record space this page can reuse, whatever freed it.
+purge puts a delete-marked record here; a split leaves the run it moved
+PAGE_GARBAGE counts the bytes; an insert takes one before it grows the heap`,
 	"Page directory": `Sparse index of the record chain, growing back from the FIL trailer.
 one slot per 4 to 8 records, so a lookup binary-searches the page
 PAGE_N_DIR_SLOTS counts the slots`,

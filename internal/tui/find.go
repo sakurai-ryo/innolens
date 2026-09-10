@@ -121,8 +121,11 @@ func (m *Model) addClusterLinks(tree *node, p *innodb.Page) {
 	if ip, err := p.ParseIndex(nil); err != nil || ip.Hdr.Level > 0 {
 		return
 	}
+	// A record on the free list still holds the key it was written with, so it
+	// gets the link too: what the lookup finds is whether the row outlived the
+	// split or purge that freed these bytes.
 	for _, sec := range tree.children {
-		if sec.label != "Records" {
+		if sec.label != "Records" && sec.label != "PAGE_FREE list" {
 			continue
 		}
 		for _, rec := range sec.children {
