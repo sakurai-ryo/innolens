@@ -32,6 +32,8 @@ var (
 	headStyle   = lipgloss.NewStyle().Bold(true).Foreground(colAccent)
 	offStyle    = lipgloss.NewStyle().Foreground(colMuted)
 	dangerStyle = lipgloss.NewStyle().Foreground(colDanger)
+	dialogStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).
+			BorderForeground(colAccent).Foreground(colText).Padding(0, 1)
 )
 
 // Region ids paint every byte of a page. Records alternate between two shades

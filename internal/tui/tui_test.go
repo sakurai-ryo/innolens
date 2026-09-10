@@ -289,3 +289,34 @@ func TestFilter(t *testing.T) {
 		t.Fatalf("left pane %v was not restored to the folded tree", labels)
 	}
 }
+
+// TestNoticeDialog checks the notice floats over the frame as a centred box
+// without pushing any of it out of the terminal.
+func TestNoticeDialog(t *testing.T) {
+	m, err := New(filepath.Join("..", "..", "test", "testdata", "80"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	plain := strings.Split(m.View(), "\n")
+	m.status.notice = "read view trx_id 42 marks 3 version chain(s) on this page"
+	got := strings.Split(m.View(), "\n")
+	if len(got) != len(plain) {
+		t.Fatalf("the dialog resized the frame: %d lines, want %d", len(got), len(plain))
+	}
+	var boxed []string
+	for _, l := range got {
+		if strings.ContainsAny(l, "╭╰") || strings.Contains(l, "trx_id 42") {
+			boxed = append(boxed, l)
+		}
+	}
+	if len(boxed) != 3 {
+		t.Fatalf("dialog is %d lines, want a top, a body and a bottom:\n%s", len(boxed), m.View())
+	}
+	for _, l := range boxed {
+		if !strings.HasPrefix(l, "  ") {
+			t.Errorf("dialog is not centred: %q", l)
+		}
+	}
+	t.Log("\n" + m.View())
+}

@@ -30,8 +30,8 @@ func (v readView) String() string {
 	return fmt.Sprintf("read view trx_id %d", v.trxID)
 }
 
-// setReadView takes the trx id typed into the `v` prompt and rebuilds the
-// annotation so the version chains are marked against it. Empty text clears it.
+// setReadView takes the trx id typed into the `v` prompt and marks the version
+// chains against it. Empty text clears it.
 func (m *Model) setReadView(text string) {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -44,14 +44,39 @@ func (m *Model) setReadView(text string) {
 		}
 		m.view = readView{set: true, trxID: id}
 	}
+	m.status.view = m.view.String()
 	if m.page == nil {
 		return
 	}
-	cur := m.ann.cur
-	m.showPage(m.pageSpace, m.pageTable, m.page, "")
-	m.ann.cur = cur
+	// Marking in place rather than rebuilding the page keeps the chains the
+	// marks land on expanded; a rebuild folds every one of them away again.
+	n := m.remarkVersions(m.ann.root)
+	switch {
+	case !m.view.set:
+		m.status.notice = "read view cleared"
+	case n == 0:
+		m.status.notice = m.view.String() + ": expand a record's versions to see which one it reads"
+	default:
+		m.status.notice = fmt.Sprintf("%s marks %d version chain(s) on this page", m.view, n)
+	}
 	m.ann.refresh()
-	m.followSelection()
+}
+
+// remarkVersions re-marks every chain that has already been walked and reports
+// how many. One not yet expanded is marked by walkVersions when it loads.
+func (m *Model) remarkVersions(n *node) int {
+	if n == nil {
+		return 0
+	}
+	count := 0
+	if n.tag == "versions" && n.loaded {
+		m.markVisible(n.children)
+		count++
+	}
+	for _, c := range n.children {
+		count += m.remarkVersions(c)
+	}
+	return count
 }
 
 // colVal is one column of a row image being rebuilt version by version.
@@ -234,12 +259,13 @@ func summary(vals []colVal, deleted bool) string {
 // markVisible notes which version a read view would return: the newest one
 // written by a transaction it counts as committed.
 func (m *Model) markVisible(versions []*node) {
-	if !m.view.set {
-		return
-	}
 	seen := false
 	for _, n := range versions {
 		if n.hkey != "row version" {
+			continue
+		}
+		if !m.view.set {
+			n.note = ""
 			continue
 		}
 		id := trxIDOf(n.label)

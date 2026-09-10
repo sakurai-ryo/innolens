@@ -61,14 +61,18 @@ type status struct {
 	table, space, page, tag string
 	color                   lipgloss.Color
 	delta                   string
+	view                    string // the read view in force, "" when none
 	info                    string
-	err                     string
+	// notice is a banner line under the bar for an action whose effect is off
+	// screen, so that a keypress is never silent. The next keystroke clears it.
+	notice string
+	err    string
 }
 
 // segments are the bar's parts in order; empty ones are dropped.
 func (s status) segments() []string {
 	var segs []string
-	for _, seg := range []string{s.table, s.space, s.page, s.tag, s.delta, s.info} {
+	for _, seg := range []string{s.table, s.space, s.page, s.tag, s.delta, s.view, s.info} {
 		if seg != "" {
 			segs = append(segs, seg)
 		}
@@ -76,9 +80,13 @@ func (s status) segments() []string {
 	return segs
 }
 
-// String is the plain-text bar with the error appended, for diagnostics.
+// String is the plain-text bar with the notice and error appended, for
+// diagnostics.
 func (s status) String() string {
 	segs := s.segments()
+	if s.notice != "" {
+		segs = append(segs, s.notice)
+	}
 	if s.err != "" {
 		segs = append(segs, s.err)
 	}
@@ -103,6 +111,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
 	case tea.KeyMsg:
+		m.status.notice = ""
 		if m.promptKey(msg) {
 			return m, nil
 		}
@@ -440,9 +449,7 @@ func (m *Model) showPage(space uint32, t *innodb.Table, p *innodb.Page, from str
 	if m.diff != nil {
 		m.status.delta = fmt.Sprintf("%s %d bytes changed%s", ic.delta, m.diff.n, m.diff.against)
 	}
-	if m.view.set {
-		m.status.delta += "  " + m.view.String()
-	}
+	m.status.view = m.view.String()
 	if from != "" {
 		m.status.table = from
 	}
@@ -515,6 +522,7 @@ func (m *Model) View() string {
 	if m.status.err != "" {
 		lines = append(lines, dangerStyle.Render(truncate(ic.warn+" "+m.status.err, m.w)))
 	}
+
 	if m.focus == focusDetail {
 		lines = append(lines, m.detail()...)
 	} else {
@@ -525,6 +533,27 @@ func (m *Model) View() string {
 		lines = append(lines, m.helpPanel()...)
 	} else {
 		lines = append(lines, m.footer())
+	}
+	frame := strings.Join(lines, "\n")
+	if m.status.notice != "" {
+		frame = overlay(frame, m.status.notice, m.w)
+	}
+	return frame
+}
+
+// overlay floats a dialog over the middle of the frame. It replaces whole
+// lines: cutting a line that carries colour in half would cut an escape
+// sequence with it. A pane joined side by side holds its own newlines, so the
+// frame is split again here rather than composed from the slice above.
+func overlay(frame, text string, w int) string {
+	lines := strings.Split(frame, "\n")
+	rows := strings.Split(dialogStyle.Width(min(max(w-8, 8), 60)).Render(text), "\n")
+	top := max((len(lines)-len(rows))/2, 0)
+	for i, r := range rows {
+		if top+i >= len(lines) {
+			break
+		}
+		lines[top+i] = lipgloss.PlaceHorizontal(w, lipgloss.Center, r)
 	}
 	return strings.Join(lines, "\n")
 }

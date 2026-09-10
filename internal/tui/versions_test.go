@@ -54,25 +54,40 @@ func TestVersionChain(t *testing.T) {
 				t.Fatalf("enter on a version: %s", m.status.err)
 			}
 
-			// A read view of the older transaction sees the older version.
+			// A read view of the older transaction sees the older version, and
+			// marks the chain where it already is instead of folding it away.
 			m.focus = focusTables
 			m.tables.cur = tableIdx(&m.tables, "types")
 			press(m, tea.KeyEnter)
 			m.pages.cur = openLeaf(t, m)
 			press(m, tea.KeyEnter)
+			expandAll(&m.ann)
+			_, chain = findChain(m)
+			if chain == nil {
+				t.Fatal("no version chain to mark")
+			}
 			key(t, m, "v")
 			key(t, m, strings.Split(strconv.FormatUint(trxIDOf(prev.label), 10), "")...)
 			press(m, tea.KeyEnter)
 			if m.status.err != "" {
 				t.Fatalf("read view: %s", m.status.err)
 			}
-			if !strings.Contains(m.status.delta, "read view trx_id") {
+			if !strings.Contains(m.status.view, "read view trx_id") {
 				t.Fatalf("status does not show the read view: %s", m.status)
 			}
-			expandAll(&m.ann)
-			_, chain = findChain(m)
-			if chain == nil {
-				t.Fatal("the version chain is gone after setting a read view")
+			if !strings.Contains(m.status.notice, "version chain") {
+				t.Errorf("applying a read view left no notice: %s", m.status)
+			}
+			press(m, tea.KeyDown)
+			if m.status.notice != "" {
+				t.Error("the notice outlived the next keystroke")
+			}
+			var shown bool
+			for _, r := range m.ann.rows {
+				shown = shown || r.n == chain[1]
+			}
+			if !shown {
+				t.Error("setting a read view folded the version chain away")
 			}
 			var seen int
 			for _, v := range chain {
