@@ -211,7 +211,7 @@ func TestOpenTableWithoutSDI(t *testing.T) {
 	if !hasLabel(rowLabels(&m.pages), "Other pages") {
 		t.Fatalf("page tree %v has no pages", rowLabels(&m.pages))
 	}
-	if !strings.Contains(m.status.err, "SDI") {
+	if !strings.Contains(m.status.err, "page 0") {
 		t.Fatalf("status does not say why the table is missing: %s", m.status)
 	}
 }

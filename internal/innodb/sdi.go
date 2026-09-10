@@ -41,6 +41,11 @@ func (s *Space) ReadSDI() ([]SDIRecord, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A file whose page 0 was never flushed has no FSP header to read the root
+	// page out of, so the bytes there would be someone else's.
+	if p0.FIL.Type != FIL_PAGE_TYPE_FSP_HDR {
+		return nil, fmt.Errorf("%s: page 0 is %s, not an FSP header: nothing of this tablespace has reached disk", s.Path, p0.TypeName())
+	}
 	no := p0.sdiRootPage()
 	// A tablespace created since page 0 was last flushed still has the root page
 	// number of the freshly created file, which is 0.
