@@ -305,7 +305,7 @@ func (m *Model) picking() bool { return m.picker() != nil }
 
 // pickerView is the popup: its title, then the options or the key being typed.
 func (m *Model) pickerView(p *picker, w int) string {
-	body := p.list.view(w, min(len(p.list.rows), max(m.paneHeight()-2, 1)), true)
+	body := p.list.view(w, min(p.list.lines(w), max(m.paneHeight()-2, 1)), true)
 	switch m.prompt.kind {
 	case promptLock:
 		body = m.lockWiz.lockValueLabel() + ": " + m.prompt.text + "▏"
@@ -665,7 +665,9 @@ func overlay(frame, text string, w, dw int) string {
 
 func (m *Model) statusBar() string {
 	bar := truncate(strings.Join(append([]string{m.path}, m.status.segments()...), " │ "), m.w)
-	return colorize(bar, &node{tag: m.status.tag, color: m.status.color, note: m.status.info})
+	n := &node{tag: m.status.tag, color: m.status.color, note: m.status.info}
+	tagAt, noteAt := n.spans(bar)
+	return colorize(bar, 0, n, tagAt, noteAt)
 }
 
 func (m *Model) footer() string {
