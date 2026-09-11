@@ -221,8 +221,13 @@ func (m *Model) promptKey(msg tea.KeyMsg) bool {
 			return false
 		}
 		m.commitPrompt()
-	default:
+	case tea.KeyCtrlC:
 		return false
+	default:
+		// The filter stays open while its matches are walked with the arrows;
+		// the other prompts swallow every other key so an arrow typed into
+		// them does not fold the tree behind the text.
+		return m.prompt.kind != promptFilter
 	}
 	return true
 }

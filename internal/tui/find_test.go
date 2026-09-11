@@ -26,6 +26,12 @@ func TestFindKey(t *testing.T) {
 			if m.prompt.kind != promptFind || m.prompt.text != "1234" {
 				t.Fatalf("find prompt = %+v", m.prompt)
 			}
+			before := rowLabels(&m.pages)
+			press(m, tea.KeyLeft)
+			press(m, tea.KeyRight)
+			if got := rowLabels(&m.pages); strings.Join(got, "\n") != strings.Join(before, "\n") {
+				t.Fatalf("arrows typed into the find prompt changed the tree:\n%v\n%v", before, got)
+			}
 			press(m, tea.KeyEnter)
 			if m.prompt.kind != promptNone {
 				t.Fatal("enter did not close the find prompt")
