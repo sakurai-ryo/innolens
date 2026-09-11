@@ -58,6 +58,14 @@ page against the same page in `before`.
   READ COMMITTED. Locks live in server memory, not on disk, so these are worked
   out from the tree with the rules of `row_search_mvcc`, and checked against a
   real server.
+- Insert simulation with `i`: pick the index, type the key, and the descent
+  ends on the leaf with the two records the new one would go between. The rows
+  after it say what the insert does to that page, the way
+  `btr_cur_optimistic_insert` decides it: the bytes come off the free list or
+  the heap, the page is reorganized first, or it splits, with the cut, the
+  records that move and the node pointer the parent gets. The record is sized
+  like its neighbour, since only the key is typed. If the last `l` left a gap
+  lock where the record would go, the insert is shown waiting for it.
 - Undo tablespaces browsable on their own.
 - The `PAGE_FREE list` of a page says why each record is on it: purge took a
   delete-marked one off, or a page split left behind the run it moved.

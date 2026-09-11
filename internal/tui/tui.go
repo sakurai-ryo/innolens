@@ -135,7 +135,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.findBack()
 					break
 				}
-				if (strings.HasPrefix(m.pagesTitle, "FIND ") || strings.HasPrefix(m.pagesTitle, "LOCKS ")) && m.space != nil {
+				if (strings.HasPrefix(m.pagesTitle, "FIND ") || strings.HasPrefix(m.pagesTitle, "LOCKS ") || strings.HasPrefix(m.pagesTitle, "INSERT ")) && m.space != nil {
 					m.openTable(m.space.Path)
 					break
 				}
@@ -156,9 +156,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cur().expand()
 		case "r":
 			m.reload()
-		case "f":
+		case "f", "i":
 			if m.focus == focusPages && m.searchable() && !m.picking() {
-				m.startFind()
+				m.startFind(msg.String() == "i")
 			}
 		case "l":
 			if m.focus == focusPages && m.searchable() && !m.picking() {
@@ -673,6 +673,8 @@ func (m *Model) footer() string {
 	switch {
 	case m.prompt.kind == promptFilter:
 		keys = "type to filter (db.table)   ↑↓ move   ←→ fold   enter open   esc clear"
+	case m.prompt.kind == promptFind && m.findWiz.insert:
+		keys = "type the key   enter insert   esc back"
 	case m.prompt.kind == promptFind:
 		keys = "type the key   enter search   esc back"
 	case m.prompt.kind == promptView:
@@ -684,7 +686,7 @@ func (m *Model) footer() string {
 	case m.focus == focusTables:
 		keys = "↑↓ move   ←→ fold   enter open   / search   esc quit   r reload   ? help"
 	case m.focus == focusPages && m.searchable():
-		keys = "↑↓ move   ←→ fold   enter open   f find key   l locks   esc back   r reload   ? help"
+		keys = "↑↓ move   ←→ fold   enter open   f find key   i insert   l locks   esc back   r reload   ? help"
 	case m.focus == focusDetail:
 		keys = "↑↓ move   enter follow   n/p replay redo   v read view   esc back   r reload   ? help"
 	}

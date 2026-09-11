@@ -87,6 +87,15 @@ X or S alone is next-key, the record and the gap before it; ,GAP is the gap
 ,REC_NOT_GAP the record only; on the supremum, the gap after the last record`,
 	"find index": `One B+tree of the table: enter picks it, then the key is typed.
 the lookup narrows on the first column of the index only`,
+	"insert index": `One B+tree of the table: enter picks it, then the key is typed.
+the insert is placed by the first column of the index only
+the other columns are not typed: the record is sized like its neighbour`,
+	"insert": `What an INSERT of the key does to the leaf page, worked out from the tree.
+where it goes, what it takes the bytes from, what the header records
+none of this is written: the pages stay as they are on disk`,
+	"insert split": `The page cannot take the record: half of it moves to a new page.
+an ascending run is cut right after the new record, a descending one before
+otherwise at the middle; the parent gets a node pointer for the upper half`,
 	"descent": `One page of a key lookup, root first, one page per level of the tree.
 a node page picks the last child whose key does not sort after the key
 the leaf row is where the record is, or where it would be inserted`,

@@ -50,11 +50,20 @@ func (m *Model) currentIndex() *innodb.IndexDef {
 	return nil
 }
 
-// findWizard is the `f` picker: the index is chosen from a popup, then the
-// key is typed.
+// findWizard is the `f` picker, and the `i` one: the index is chosen from a
+// popup, then the key is typed.
 type findWizard struct {
 	picker
-	ix *innodb.IndexDef
+	ix     *innodb.IndexDef
+	insert bool // `i`: simulate an insert of the key rather than look it up
+}
+
+// verb is the word the picker title and the footer use for what it does.
+func (w *findWizard) verb() string {
+	if w.insert {
+		return "INSERT"
+	}
+	return "FIND"
 }
 
 // findChoice is one index row: Enter picks it and asks for the key.
@@ -62,12 +71,17 @@ type findChoice struct{ ix *innodb.IndexDef }
 
 // startFind opens the picker over the page tree, with the index the cursor
 // was in already selected.
-func (m *Model) startFind() {
+func (m *Model) startFind(insert bool) {
 	if m.space == nil || m.table == nil {
 		m.status.err = "no index to search: this tablespace has no table definition"
 		return
 	}
-	w := &findWizard{title: "FIND  choose the index"}
+	w := &findWizard{insert: insert}
+	w.title = w.verb() + "  choose the index"
+	note, hkey := "look the key up in this B+tree; the key is its first column", "find index"
+	if insert {
+		note, hkey = "put a record with the key into this B+tree; the key is its first column", "insert index"
+	}
 	root := &node{}
 	cur := 0
 	for i, ix := range m.table.Indexes {
@@ -75,8 +89,7 @@ func (m *Model) startFind() {
 			cur = i
 		}
 		root.children = append(root.children, &node{label: ix.Name + "  (" + ix.Cols[0].Name + ")",
-			note: "look the key up in this B+tree; the key is its first column", hkey: "find index",
-			data: findChoice{ix}})
+			note: note, hkey: hkey, data: findChoice{ix}})
 	}
 	w.list = newList(root)
 	w.list.cur = cur
@@ -89,7 +102,7 @@ func (m *Model) findPick(c findChoice) {
 		return
 	}
 	m.findWiz.ix = c.ix
-	m.findWiz.title = "FIND  " + c.ix.Name + " (" + c.ix.Cols[0].Name + ")"
+	m.findWiz.title = m.findWiz.verb() + "  " + c.ix.Name + " (" + c.ix.Cols[0].Name + ")"
 	m.prompt = prompt{kind: promptFind}
 }
 
@@ -98,13 +111,13 @@ func (m *Model) findPick(c findChoice) {
 func (m *Model) findBack() {
 	w := m.findWiz
 	if w.ix != nil {
-		w.ix, w.title = nil, "FIND  choose the index"
+		w.ix, w.title = nil, w.verb()+"  choose the index"
 		return
 	}
 	m.findWiz = nil
 }
 
-// findKey runs the lookup the picker was set up for.
+// findKey runs the lookup, or the insert, the picker was set up for.
 func (m *Model) findKey(key string) {
 	w := m.findWiz
 	if w == nil || w.ix == nil {
@@ -116,6 +129,10 @@ func (m *Model) findKey(key string) {
 		return
 	}
 	m.findWiz = nil
+	if w.insert {
+		m.insertIn(w.ix, key)
+		return
+	}
 	m.findIn(w.ix, key)
 }
 
