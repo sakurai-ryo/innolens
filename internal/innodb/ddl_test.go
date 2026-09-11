@@ -92,7 +92,7 @@ func TestCreateTableClauses(t *testing.T) {
 	}{Name: "ck", State: 2, CheckClauseUTF8: "(`id` > 0)"})
 	want := "CREATE TABLE `t` (\n" +
 		"  `id` int NOT NULL,\n" +
-		"  `s` varchar(10) COLLATE utf8mb4_0900_ai_ci DEFAULT NULL,\n" +
+		"  `s` varchar(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL,\n" +
 		"  `b` varchar(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,\n" +
 		"  `ts` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n" +
 		"  `e` int DEFAULT (`id` + 1),\n" +

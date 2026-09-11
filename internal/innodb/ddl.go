@@ -74,11 +74,11 @@ var rowFormatNames = map[string]string{"1": "FIXED", "2": "DYNAMIC", "3": "COMPR
 func columnDDL(c *ddColumn, tableCS collation) string {
 	s := ident(c.Name) + " " + c.ColumnTypeUTF8
 	if cs, ok := collations[c.CollationID]; ok && hasCharset(c) {
-		// The same rules as sql_show.cc: the charset when it differs from the
-		// table's or was written out, the collation when it is not the
+		// The same rules as sql_show.cc: the charset when the collation differs
+		// from the table's or was written out, the collation when it is not the
 		// charset's default, was written out, or is the 8.0 default on a table
 		// that has another.
-		if cs.charset != tableCS.charset || c.IsExplicitCollation {
+		if cs.name != tableCS.name || c.IsExplicitCollation {
 			s += " CHARACTER SET " + cs.charset
 		}
 		if !cs.primary || c.IsExplicitCollation || (c.CollationID == collationUTF8MB40900 && tableCS.name != cs.name) {

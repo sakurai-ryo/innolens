@@ -35,7 +35,7 @@ type DescentStep struct {
 // multi-column key is only narrowed down to its first column, and a collation
 // that does not sort like Go's string compare will disagree on the boundary.
 func (s *Space) Descend(idx *IndexDef, key string) ([]DescentStep, error) {
-	out, leaf, pos, err := s.descend(idx, key)
+	out, leaf, pos, err := s.descend(idx, key, false)
 	if err != nil {
 		return out, err
 	}
@@ -54,7 +54,13 @@ func (s *Space) Descend(idx *IndexDef, key string) ([]DescentStep, error) {
 // which is len(UserRecs()) when every record does: the cursor is then on the
 // supremum. An empty key sorts before everything, so it lands on the first
 // record of the leftmost leaf.
-func (s *Space) descend(idx *IndexDef, key string) ([]DescentStep, *IndexPage, int, error) {
+//
+// ge is a PAGE_CUR_GE search: a node page is left through the last child whose
+// key sorts strictly before the key, because a child whose node pointer equals
+// the key may be preceded by records equal to it in the child before, and
+// InnoDB then reads that child to its supremum first. Otherwise (PAGE_CUR_LE
+// and G) it is the last child whose key does not sort after the key.
+func (s *Space) descend(idx *IndexDef, key string, ge bool) ([]DescentStep, *IndexPage, int, error) {
 	if idx == nil {
 		return nil, nil, 0, fmt.Errorf("no index definition to search with")
 	}
@@ -84,7 +90,7 @@ func (s *Space) descend(idx *IndexDef, key string) ([]DescentStep, *IndexPage, i
 		for i, rec := range recs {
 			// The first record of a non-leaf page carries the min_rec flag: it
 			// stands for every key below the second child, whatever it stores.
-			if i > 0 && compareKey(key, recKey(rec)) < 0 {
+			if c := compareKey(key, recKey(rec)); i > 0 && (c < 0 || c == 0 && ge) {
 				break
 			}
 			st.Slot, st.Key, st.Child = i, recKey(rec), rec.Child

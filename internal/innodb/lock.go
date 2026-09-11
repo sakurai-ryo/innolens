@@ -176,7 +176,7 @@ func (m *lockSim) scan() ([]Lock, error) {
 	// row_search_mvcc's unique_search: an exact match on all columns of a
 	// unique key, which the prompt can only give for a single-column one.
 	uniqueSearch := st.Eq && m.idx.Unique && m.idx.NKey == 1
-	_, leaf, pos, err := m.s.descend(m.idx, st.Lo)
+	_, leaf, pos, err := m.s.descend(m.idx, st.Lo, st.LoIncl)
 	if err != nil {
 		return nil, err
 	}
@@ -247,7 +247,7 @@ func (m *lockSim) scan() ([]Lock, error) {
 		switch {
 		case uniqueSearch && !r.Deleted():
 			kind, why = lockRecNotGap, "an exact match on a unique key: no other row can have it, so the gap needs no lock"
-		case clustered && ge && first && compareKey(st.Lo, key) == 0:
+		case clustered && ge && first && m.idx.NKey == 1 && compareKey(st.Lo, key) == 0:
 			kind, why = lockRecNotGap, "the first record is the lower bound itself: nothing in range fits in the gap before it"
 		case clustered && st.Hi != "":
 			// row_compare_row_to_range: the clustered index knows the upper
@@ -264,7 +264,9 @@ func (m *lockSim) scan() ([]Lock, error) {
 				stopFound = true
 				kind, why = lockGap, "the upper bound is excluded: only the gap before this record is in range"
 			case c == 0:
-				stopFound = true
+				// Only a whole key can be the last record in range; on a
+				// composite key more may share its first column.
+				stopFound = m.idx.NKey == 1
 				kind, why = lockOrdinary, "next-key: the record and the gap before it; the bound itself, so the scan ends here"
 			default:
 				kind, why = lockOrdinary, "next-key: the record and the gap before it, so no row can appear in between"
@@ -316,7 +318,7 @@ func (m *lockSim) row(r *Rec) error {
 		return nil
 	}
 	key := fieldValue(r, m.clust.Cols[0].Name)
-	_, cl, pos, err := m.s.descend(m.clust, key)
+	_, cl, pos, err := m.s.descend(m.clust, key, false)
 	if err != nil {
 		return err
 	}

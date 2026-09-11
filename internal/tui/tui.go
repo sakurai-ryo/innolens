@@ -231,6 +231,9 @@ func (m *Model) promptKey(msg tea.KeyMsg) bool {
 func (m *Model) openPrompt(key string) bool {
 	kind := promptNone
 	switch {
+	case m.lockWiz != nil:
+		// The picker owns the pane until it is done or left with esc.
+		return false
 	case key == "/" && m.focus == focusTables:
 		kind = promptFilter
 	case key == "f" && m.focus == focusPages && m.searchable():
