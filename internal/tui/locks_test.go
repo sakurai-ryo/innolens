@@ -11,11 +11,11 @@ import (
 // pick presses Enter on the picker row whose label starts with prefix.
 func pick(t *testing.T, m *Model, prefix string) {
 	t.Helper()
-	i := indexOf(&m.pages, prefix)
+	i := indexOf(m.cur(), prefix)
 	if i < 0 {
-		t.Fatalf("no row %q in %v", prefix, rowLabels(&m.pages))
+		t.Fatalf("no row %q in %v", prefix, rowLabels(m.cur()))
 	}
-	m.pages.cur = i
+	m.cur().cur = i
 	press(m, tea.KeyEnter)
 }
 
@@ -37,12 +37,19 @@ func TestLocks(t *testing.T) {
 			// The cursor is on the secondary index, which the index step offers first.
 			m.pages.cur = indexOf(&m.pages, "idx_varchar")
 			key(t, m, "l")
-			if m.lockWiz == nil || !strings.HasPrefix(m.pagesTitle, "LOCK ") {
-				t.Fatalf("l did not open the picker: %q", m.pagesTitle)
+			if m.lockWiz == nil || !strings.HasPrefix(m.lockWiz.title, "LOCK ") {
+				t.Fatalf("l did not open the picker: %+v", m.lockWiz)
+			}
+			// The popup floats over the page tree, which stays as it was.
+			if v := m.View(); !strings.Contains(v, "choose the isolation level") || !strings.Contains(v, "REPEATABLE READ") {
+				t.Errorf("the picker is not drawn")
+			}
+			if strings.Join(rowLabels(&m.pages), "|") != strings.Join(tree, "|") {
+				t.Errorf("the picker replaced the page tree: %v", rowLabels(&m.pages))
 			}
 			pick(t, m, "REPEATABLE READ")
 			pick(t, m, "SELECT ... FOR UPDATE")
-			if sel := m.pages.sel(); !strings.HasPrefix(sel.label, "idx_varchar") {
+			if sel := m.cur().sel(); !strings.HasPrefix(sel.label, "idx_varchar") {
 				t.Errorf("the index step starts on %q, want the tree under the cursor", sel.label)
 			}
 			pick(t, m, "idx_varchar")

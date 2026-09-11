@@ -50,12 +50,11 @@ func (m *Model) currentIndex() *innodb.IndexDef {
 	return nil
 }
 
-// findWizard is the `f` picker: the index is chosen from a list, then the key
-// is typed. The page tree it replaced is kept to go back to on esc.
+// findWizard is the `f` picker: the index is chosen from a popup, then the
+// key is typed.
 type findWizard struct {
-	ix    *innodb.IndexDef
-	saved list
-	title string
+	picker
+	ix *innodb.IndexDef
 }
 
 // findChoice is one index row: Enter picks it and asks for the key.
@@ -68,7 +67,7 @@ func (m *Model) startFind() {
 		m.status.err = "no index to search: this tablespace has no table definition"
 		return
 	}
-	m.findWiz = &findWizard{saved: m.pages, title: m.pagesTitle}
+	w := &findWizard{title: "FIND  choose the index"}
 	root := &node{}
 	cur := 0
 	for i, ix := range m.table.Indexes {
@@ -79,10 +78,9 @@ func (m *Model) startFind() {
 			note: "look the key up in this B+tree; the key is its first column", hkey: "find index",
 			data: findChoice{ix}})
 	}
-	m.pages = newList(root)
-	m.pages.cur = cur
-	m.pagesTitle = "FIND  choose the index"
-	m.focus = focusPages
+	w.list = newList(root)
+	w.list.cur = cur
+	m.findWiz = w
 }
 
 // findPick takes the chosen index and asks for the key.
@@ -91,8 +89,8 @@ func (m *Model) findPick(c findChoice) {
 		return
 	}
 	m.findWiz.ix = c.ix
+	m.findWiz.title = "FIND  " + c.ix.Name + " (" + c.ix.Cols[0].Name + ")"
 	m.prompt = prompt{kind: promptFind}
-	m.pagesTitle = "FIND  " + c.ix.Name + " (" + c.ix.Cols[0].Name + ")"
 }
 
 // findBack is esc: from the key back to the index list, from the list back
@@ -100,12 +98,10 @@ func (m *Model) findPick(c findChoice) {
 func (m *Model) findBack() {
 	w := m.findWiz
 	if w.ix != nil {
-		w.ix = nil
-		m.pagesTitle = "FIND  choose the index"
+		w.ix, w.title = nil, "FIND  choose the index"
 		return
 	}
 	m.findWiz = nil
-	m.pages, m.pagesTitle = w.saved, w.title
 }
 
 // findKey runs the lookup the picker was set up for.

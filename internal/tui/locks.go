@@ -41,15 +41,13 @@ func (ls *lockSet) on(no uint32) []innodb.Lock {
 }
 
 // lockWizard is the `l` picker: the statement is put together one choice at a
-// time in the right pane, and only the key values are typed. The page tree it
-// replaced is kept to go back to on esc.
+// time in a popup, and only the key values are typed.
 type lockWizard struct {
-	step  int
-	st    innodb.LockStmt
-	ix    *innodb.IndexDef
-	cmp   string // the comparison picked: =, <, <=, >, >=, between
-	saved list
-	title string
+	picker
+	step int
+	st   innodb.LockStmt
+	ix   *innodb.IndexDef
+	cmp  string // the comparison picked: =, <, <=, >, >=, between
 }
 
 // lockChoice is one option row: Enter passes value to the step it belongs to.
@@ -72,7 +70,7 @@ func (m *Model) startLock() {
 		m.status.err = "no index to lock: this tablespace has no table definition"
 		return
 	}
-	m.lockWiz = &lockWizard{ix: m.currentIndex(), saved: m.pages, title: m.pagesTitle}
+	m.lockWiz = &lockWizard{ix: m.currentIndex()}
 	m.lockStep()
 }
 
@@ -113,10 +111,9 @@ func (m *Model) lockStep() {
 		add(">= key", "the key and everything after it", ">=")
 		add("between two keys", "a closed range, BETWEEN a AND b", "between")
 	}
-	m.pages = newList(root)
-	m.pages.cur = cur
-	m.pagesTitle = "LOCK  " + m.lockWiz.progress()
-	m.focus = focusPages
+	w.list = newList(root)
+	w.list.cur = cur
+	w.title = "LOCK  " + w.progress()
 }
 
 // progress is the statement as far as it has been chosen.
@@ -154,7 +151,6 @@ func (m *Model) lockPick(c lockChoice) {
 	case lockStepIso:
 		if c.value == "clear" {
 			m.locks, m.lockWiz, m.status.locks = nil, nil, ""
-			m.pages, m.pagesTitle = w.saved, w.title
 			m.status.notice = "locks cleared"
 			return
 		}
@@ -173,7 +169,7 @@ func (m *Model) lockPick(c lockChoice) {
 	w.step++
 	if w.step == lockStepValue {
 		m.prompt = prompt{kind: promptLock}
-		m.pagesTitle = "LOCK  " + w.progress()
+		w.title = "LOCK  " + w.progress()
 		return
 	}
 	m.lockStep()
@@ -184,7 +180,6 @@ func (m *Model) lockBack() {
 	w := m.lockWiz
 	if w.step == lockStepIso {
 		m.lockWiz = nil
-		m.pages, m.pagesTitle = w.saved, w.title
 		return
 	}
 	if w.step == lockStepValue && w.st.Lo != "" && w.cmp == "between" {

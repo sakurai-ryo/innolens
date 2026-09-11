@@ -24,10 +24,10 @@ func TestFindKey(t *testing.T) {
 
 			// f lists the indexes with the clustered one selected; enter asks for the key.
 			key(t, m, "f")
-			if m.findWiz == nil || m.pagesTitle != "FIND  choose the index" {
-				t.Fatalf("f did not open the index picker: %q", m.pagesTitle)
+			if m.findWiz == nil || m.findWiz.title != "FIND  choose the index" || m.pagesTitle != "PAGES" {
+				t.Fatalf("f did not open the index picker: %+v, pane %q", m.findWiz, m.pagesTitle)
 			}
-			if rows := rowLabels(&m.pages); len(rows) != 2 || !strings.HasPrefix(rows[0], "PRIMARY") || !strings.HasPrefix(rows[1], "idx_varchar") {
+			if rows := rowLabels(m.cur()); len(rows) != 2 || !strings.HasPrefix(rows[0], "PRIMARY") || !strings.HasPrefix(rows[1], "idx_varchar") {
 				t.Fatalf("index picker = %v", rows)
 			}
 			press(m, tea.KeyEnter)
@@ -108,8 +108,8 @@ func TestFindKey(t *testing.T) {
 			key(t, m, "f")
 			press(m, tea.KeyEnter)
 			press(m, tea.KeyEsc)
-			if m.findWiz == nil || m.prompt.kind != promptNone || m.pagesTitle != "FIND  choose the index" {
-				t.Fatalf("esc from the key: wiz %v, prompt %+v, title %q", m.findWiz, m.prompt, m.pagesTitle)
+			if m.findWiz == nil || m.prompt.kind != promptNone || m.findWiz.title != "FIND  choose the index" {
+				t.Fatalf("esc from the key: wiz %+v, prompt %+v", m.findWiz, m.prompt)
 			}
 			press(m, tea.KeyEsc)
 			if m.findWiz != nil || m.pagesTitle != "PAGES" || !hasLabel(rowLabels(&m.pages), "PRIMARY") {

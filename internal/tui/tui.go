@@ -282,8 +282,38 @@ func (m *Model) closePrompt() {
 	}
 }
 
-// picking says whether the f or l picker has the page pane.
-func (m *Model) picking() bool { return m.lockWiz != nil || m.findWiz != nil }
+// picker is the popup the f and l wizards choose from: a flat list under a
+// title that says what was chosen so far, replaced by the key prompt once the
+// choices are made. It floats over the page pane, which keeps its tree.
+type picker struct {
+	title string
+	list  list
+}
+
+// picker is the open one, if any.
+func (m *Model) picker() *picker {
+	switch {
+	case m.lockWiz != nil:
+		return &m.lockWiz.picker
+	case m.findWiz != nil:
+		return &m.findWiz.picker
+	}
+	return nil
+}
+
+func (m *Model) picking() bool { return m.picker() != nil }
+
+// pickerView is the popup: its title, then the options or the key being typed.
+func (m *Model) pickerView(p *picker, w int) string {
+	body := p.list.view(w, min(len(p.list.rows), max(m.paneHeight()-2, 1)), true)
+	switch m.prompt.kind {
+	case promptLock:
+		body = m.lockWiz.lockValueLabel() + ": " + m.prompt.text + "▏"
+	case promptFind:
+		body = "key: " + m.prompt.text + "▏"
+	}
+	return headStyle.Render(truncate(p.title, w)) + "\n" + rule(w) + "\n" + body
+}
 
 func (m *Model) commitPrompt() {
 	switch m.prompt.kind {
@@ -316,6 +346,9 @@ func (m *Model) setQuery(q string) {
 }
 
 func (m *Model) cur() *list {
+	if p := m.picker(); p != nil {
+		return &p.list
+	}
 	switch m.focus {
 	case focusPages:
 		return &m.pages
@@ -600,19 +633,26 @@ func (m *Model) View() string {
 		lines = append(lines, m.footer())
 	}
 	frame := strings.Join(lines, "\n")
+	if p := m.picker(); p != nil {
+		w := dialogWidth(m.w, 90)
+		frame = overlay(frame, m.pickerView(p, w-dialogStyle.GetHorizontalPadding()), m.w, w)
+	}
 	if m.status.notice != "" {
-		frame = overlay(frame, m.status.notice, m.w)
+		frame = overlay(frame, m.status.notice, m.w, dialogWidth(m.w, 60))
 	}
 	return frame
 }
+
+// dialogWidth is the width a dialog gets on a terminal w wide, maxw at most.
+func dialogWidth(w, maxw int) int { return min(max(w-8, 8), maxw) }
 
 // overlay floats a dialog over the middle of the frame. It replaces whole
 // lines: cutting a line that carries colour in half would cut an escape
 // sequence with it. A pane joined side by side holds its own newlines, so the
 // frame is split again here rather than composed from the slice above.
-func overlay(frame, text string, w int) string {
+func overlay(frame, text string, w, dw int) string {
 	lines := strings.Split(frame, "\n")
-	rows := strings.Split(dialogStyle.Width(min(max(w-8, 8), 60)).Render(text), "\n")
+	rows := strings.Split(dialogStyle.Width(dw).Render(text), "\n")
 	top := max((len(lines)-len(rows))/2, 0)
 	for i, r := range rows {
 		if top+i >= len(lines) {
@@ -634,11 +674,11 @@ func (m *Model) footer() string {
 	case m.prompt.kind == promptFilter:
 		keys = "type to filter (db.table)   ↑↓ move   ←→ fold   enter open   esc clear"
 	case m.prompt.kind == promptFind:
-		keys = "find key: " + m.prompt.text + "▏   enter search   esc back"
+		keys = "type the key   enter search   esc back"
 	case m.prompt.kind == promptView:
 		keys = "read view trx_id: " + m.prompt.text + "▏   enter apply   esc cancel"
 	case m.prompt.kind == promptLock:
-		keys = m.lockWiz.lockValueLabel() + ": " + m.prompt.text + "▏   enter next   esc back"
+		keys = "type the " + m.lockWiz.lockValueLabel() + "   enter next   esc back"
 	case m.picking():
 		keys = "↑↓ move   enter choose   esc back"
 	case m.focus == focusTables:
@@ -696,7 +736,7 @@ func (m *Model) panes() []string {
 	if rw < 10 {
 		rw = 10
 	}
-	right := m.pages.view(rw, h, m.focus == focusPages)
+	right := m.pages.view(rw, h, m.focus == focusPages && !m.picking())
 	if m.pages.root == nil {
 		right = dimStyle.Render("select a table or #innodb_redo")
 	}
