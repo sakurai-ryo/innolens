@@ -249,7 +249,14 @@ func (l *list) rowLines(r row, w int) (prefix string, body []string) {
 	if bw < 16 {
 		return prefix, []string{truncate(text, bw)}
 	}
-	return prefix, strings.Split(ansi.Wrap(text, bw, ""), "\n")
+	body = strings.Split(ansi.Wrap(text, bw, ""), "\n")
+	// ansi.Wrap lets a line run one cell over when a word ends at the limit
+	// and a hyphen or a lone dash follows; a line past the width would be
+	// wrapped again by the pane and push everything below it down.
+	for i, b := range body {
+		body[i] = truncate(strings.TrimRight(b, " "), bw)
+	}
+	return prefix, body
 }
 
 // text is what a row says: the label, its value, then the note.
@@ -269,6 +276,9 @@ func (n *node) text() string {
 func (l *list) render(i, w int, showOff, showSize, focused bool) []string {
 	r := l.rows[i]
 	prefix, body := l.rowLines(r, w)
+	// A prefix wider than the pane leaves no room for text: the body is
+	// already empty, and the prefix itself is cut.
+	prefix = truncate(prefix, w)
 	indent := strings.Repeat(" ", lipgloss.Width(prefix))
 	right := rightCol(r.n, showOff, showSize)
 	blank := strings.Repeat(" ", lipgloss.Width(right))
@@ -283,9 +293,14 @@ func (l *list) render(i, w int, showOff, showSize, focused bool) []string {
 		}
 		// Wrapping keeps each line a substring of the text, minus the space it
 		// broke at, so the line's place in the text is found by searching on.
-		start := pos
+		// A line cut short is not one: it gets its own spans, so that a cut
+		// never lands inside the ellipsis.
+		start, tagAt, noteAt := pos, tagAt, noteAt
 		if k := strings.Index(text[pos:], b); k >= 0 {
 			start = pos + k
+		} else {
+			start = 0
+			tagAt, noteAt = r.n.spans(b)
 		}
 		pos = start + len(b)
 		pad := strings.Repeat(" ", max(0, w-lipgloss.Width(pre+b)))
@@ -357,8 +372,11 @@ func oneLine(s string) string {
 }
 
 func truncate(s string, w int) string {
-	if w <= 1 || lipgloss.Width(s) <= w {
+	if lipgloss.Width(s) <= w {
 		return s
+	}
+	if w <= 1 {
+		return strings.Repeat("…", max(w, 0))
 	}
 	return string([]rune(s)[:w-1]) + "…"
 }
