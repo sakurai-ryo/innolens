@@ -59,13 +59,26 @@ func insertNodes(pl *innodb.InsertPlan) []*node {
 	if pl.Dup != nil {
 		leaf.note = fmt.Sprintf("record @%04x already has key %s", pl.Dup.Off, pl.Key(pl.Dup))
 		leaf.data = recRef{no: pl.Leaf.No, off: pl.Dup.Off}
-		n := add("duplicate key", "S lock on the record, then ER_DUP_ENTRY",
-			"a unique index checks the key first: next-key under REPEATABLE READ, record-only under READ COMMITTED")
+		// The duplicate check locks the record it found: the clustered index
+		// takes the record alone, a secondary unique index scans with
+		// next-key locks under REPEATABLE READ.
+		lock, by := "S,REC_NOT_GAP lock on the record", "row_ins_clust_index_entry_by_modify"
+		if !pl.Clustered {
+			lock, by = "S next-key lock on the record (record-only under READ COMMITTED)", "row_ins_sec_index_entry_by_modify"
+		}
+		n := add("duplicate key", lock+", then ER_DUP_ENTRY",
+			"a unique index looks the key up before inserting, and holds what it finds until the statement ends")
 		n.color = colDanger
 		if pl.Dup.Deleted() {
 			n.value = "the record is delete-marked: it is rewritten in place, no record is added"
-			n.note = "row_ins_clust_index_entry_by_modify: the delete mark comes off and the columns are updated, the old version going to undo"
+			n.note = by + ": the delete mark comes off and the columns are updated, the old version going to undo"
 			n.color = colIndex
+		}
+		if pl.Blocked != nil {
+			n := add("waits for a lock", fmt.Sprintf("%s on heap_no %d (key %s) held by another transaction",
+				pl.Blocked.Mode, pl.Blocked.HeapNo, pl.Blocked.Key),
+				"the S lock of the duplicate check conflicts with it; the insert waits until it is released")
+			n.color = colDanger
 		}
 		return out
 	}
@@ -88,9 +101,13 @@ func insertNodes(pl *innodb.InsertPlan) []*node {
 			"nothing on the free list fits, or it is empty, so the bytes come off the top  ("+free+")")
 	case "reorganize":
 		add("reorganizes first", fmt.Sprintf("PAGE_GARBAGE %d reclaimed, then the heap", h.Garbage),
-			"the free space is there but scattered: the page is rebuilt from its records, then the record goes on top  ("+free+")")
+			"the free space is there but scattered: the page is rebuilt from its records, directory and insert pattern included, then the record goes on top  ("+free+")")
+		return out
 	case "split":
 		return append(out, splitNodes(pl)...)
+	}
+	if pl.Owner == nil {
+		return append(out, errNode("the record chain does not reach the supremum: no directory slot to join"))
 	}
 	own := fmt.Sprintf("record @%04x n_owned %d → %d", pl.Owner.Off, pl.Owner.NOwned, pl.Owner.NOwned+1)
 	if pl.Owner.Status == innodb.REC_STATUS_SUPREMUM {

@@ -94,7 +94,7 @@ the other columns are not typed: the record is sized like its neighbour`,
 where it goes, what it takes the bytes from, what the header records
 none of this is written: the pages stay as they are on disk`,
 	"insert split": `The page cannot take the record: half of it moves to a new page.
-an ascending run is cut right after the new record, a descending one before
+an ascending run is cut two records past the new one, a descending one ahead
 otherwise at the middle; the parent gets a node pointer for the upper half`,
 	"descent": `One page of a key lookup, root first, one page per level of the tree.
 a node page picks the last child whose key does not sort after the key

@@ -52,8 +52,9 @@ func (r *Rec) size() int { return r.End - r.Off + r.Extra }
 // out from the pages as btr_cur_optimistic_insert, page_cur_insert_rec_low and
 // btr_page_split_and_insert would.
 type InsertPlan struct {
-	Steps []DescentStep
-	Leaf  *IndexPage
+	Steps     []DescentStep
+	Leaf      *IndexPage
+	Clustered bool
 	// The new record goes between Prev and Next: infimum and supremum at the
 	// ends of the page.
 	Prev, Next *Rec
@@ -61,12 +62,14 @@ type InsertPlan struct {
 	// Next when Prev is the infimum. Only the key is typed, so the other
 	// columns are sized by their neighbour.
 	Size int
-	// Dup is the record that already holds the key on a unique index. When it
-	// is delete-marked the insert rewrites it in place instead of adding a
-	// record, so nothing below applies.
+	// Dup is the record that already holds the key on a single-column unique
+	// index. When it is delete-marked the insert rewrites it in place instead
+	// of adding a record, so nothing below applies.
 	Dup *Rec
-	// Blocked is a gap lock on Next that the insert intention lock would wait
-	// for, from the locks the caller passed in.
+	// Blocked is the lock, among those the caller passed in, the insert
+	// would wait for: a gap lock on Next that its insert intention lock
+	// conflicts with, or an X lock on Dup that the S lock of the duplicate
+	// check does.
 	Blocked *Lock
 	// Place is where the bytes go: "free list" reuses the head of PAGE_FREE,
 	// "heap" takes them from the top, "reorganize" compacts the page first,
@@ -121,14 +124,20 @@ func (s *Space) SimulateInsert(t *Table, idx *IndexDef, key string, locks []Lock
 		return &InsertPlan{Steps: steps}, err
 	}
 	recs := leaf.UserRecs()
-	pl := &InsertPlan{Steps: steps, Leaf: leaf, Prev: leaf.Recs[0], Next: leaf.Recs[len(leaf.Recs)-1]}
+	pl := &InsertPlan{Steps: steps, Leaf: leaf, Clustered: idx == t.Indexes[0],
+		Prev: leaf.Recs[0], Next: leaf.Recs[len(leaf.Recs)-1]}
 	st := &pl.Steps[len(pl.Steps)-1]
 	if pos < len(recs) {
 		st.Slot, st.Key, st.RecOff = pos, recKey(recs[pos]), recs[pos].Off
 		st.Found = compareKey(key, st.Key) == 0
 	}
-	if st.Found && idx.Unique {
+	// Only a whole key can be a duplicate; on a composite one the typed
+	// column may be shared by rows that differ in the rest.
+	if st.Found && idx.Unique && idx.NKey == 1 {
 		pl.Dup = recs[pos]
+		pl.Blocked = lockOn(locks, idx, leaf.No, pl.Dup.HeapNo, func(mode string) bool {
+			return strings.HasPrefix(mode, "X") && !strings.HasSuffix(mode, ",GAP")
+		})
 		return pl, nil
 	}
 	// Equal keys on a non-unique index are told apart by the primary key
@@ -142,13 +151,9 @@ func (s *Space) SimulateInsert(t *Table, idx *IndexDef, key string, locks []Lock
 	if pos < len(recs) {
 		pl.Next = recs[pos]
 	}
-	for i := range locks {
-		l := &locks[i]
-		if l.Index.ID == idx.ID && l.PageNo == leaf.No && l.HeapNo == pl.Next.HeapNo && !strings.HasSuffix(l.Mode, ",REC_NOT_GAP") {
-			pl.Blocked = l
-			break
-		}
-	}
+	pl.Blocked = lockOn(locks, idx, leaf.No, pl.Next.HeapNo, func(mode string) bool {
+		return !strings.HasSuffix(mode, ",REC_NOT_GAP")
+	})
 	switch {
 	case pl.Prev.Status == REC_STATUS_ORDINARY:
 		pl.Size = pl.Prev.size()
@@ -157,8 +162,19 @@ func (s *Space) SimulateInsert(t *Table, idx *IndexDef, key string, locks []Lock
 	default:
 		return pl, fmt.Errorf("page %d holds no record to size the new one by", leaf.No)
 	}
-	pl.place(idx == t.Indexes[0])
+	pl.place()
 	return pl, nil
+}
+
+// lockOn is the first of locks on the given record whose mode conflicts.
+func lockOn(locks []Lock, idx *IndexDef, page uint32, heapNo uint16, conflicts func(mode string) bool) *Lock {
+	for i := range locks {
+		l := &locks[i]
+		if l.Index.ID == idx.ID && l.PageNo == page && l.HeapNo == heapNo && conflicts(l.Mode) {
+			return l
+		}
+	}
+	return nil
 }
 
 // place is btr_cur_optimistic_insert's decision. The page is split when a
@@ -169,14 +185,14 @@ func (s *Space) SimulateInsert(t *Table, idx *IndexDef, key string, locks []Lock
 // page_cur_insert_rec_low takes the head of the free list if it is big
 // enough, then the heap, and a reorganize is the fallback when the heap alone
 // is too fragmented.
-func (pl *InsertPlan) place(clustered bool) {
+func (pl *InsertPlan) place() {
 	h := pl.Leaf.Hdr
 	pl.FreeNow, pl.FreeReorganized = h.maxInsertSize(1), h.maxInsertSizeAfterReorganize(1)
 	run := pl.run()
 	switch {
 	case h.Garbage > 0 && (pl.FreeReorganized < pl.Size || pl.FreeReorganized < btrPageReorganizeLimit) && h.NRecs > 1 && pl.FreeNow < pl.Size,
 		h.Garbage == 0 && pl.FreeReorganized < pl.Size,
-		clustered && h.NRecs >= 2 && spaceReserve+pl.Size > pl.FreeReorganized && run != 0:
+		pl.Clustered && h.NRecs >= 2 && spaceReserve+pl.Size > pl.FreeReorganized && run != 0:
 		pl.Place = "split"
 		pl.split(run)
 		return
@@ -185,17 +201,22 @@ func (pl *InsertPlan) place(clustered bool) {
 	case pl.FreeNow >= pl.Size:
 		pl.Place = "heap"
 	default:
+		// A reorganize rebuilds the directory and the insert pattern
+		// before the record goes in, so neither is worked out from the
+		// page as it stands.
 		pl.Place = "reorganize"
+		return
 	}
 	// The record joins the slot of the next record that owns one; the
-	// supremum always does, so the walk ends.
+	// supremum always does, so the walk ends there unless the record
+	// chain never reached it.
 	for i := pl.index(pl.Next); i < len(pl.Leaf.Recs); i++ {
 		if pl.Leaf.Recs[i].NOwned > 0 {
 			pl.Owner = pl.Leaf.Recs[i]
 			break
 		}
 	}
-	pl.SlotSplit = int(pl.Owner.NOwned)+1 > PAGE_DIR_SLOT_MAX_N_OWNED
+	pl.SlotSplit = pl.Owner != nil && int(pl.Owner.NOwned)+1 > PAGE_DIR_SLOT_MAX_N_OWNED
 	switch {
 	case h.LastInsert == 0:
 		pl.Direction = PAGE_NO_DIRECTION
@@ -242,7 +263,9 @@ func (pl *InsertPlan) split(run uint16) {
 	if len(pl.Steps) > 1 {
 		sp.Parent = pl.Steps[len(pl.Steps)-2].PageNo
 	} else {
-		sp.Root, sp.Parent = true, pl.Leaf.No
+		// The records are copied to a fresh page first, which leaves it
+		// without a PAGE_LAST_INSERT: the run the root showed is gone.
+		sp.Root, sp.Parent, run = true, pl.Leaf.No, 0
 	}
 	recs := pl.Leaf.Recs
 	prev, next := pl.index(pl.Prev), pl.index(pl.Next)

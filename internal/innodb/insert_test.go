@@ -91,15 +91,27 @@ func TestSimulateInsert(t *testing.T) {
 
 			// A non-unique index takes a second copy of a key, after the first.
 			sec := tbl.Indexes[1]
-			pl, err = s.SimulateInsert(tbl, sec, pl.Key(pl.Next), nil)
+			dup := fieldValue(pl.Next, sec.Cols[0].Name)
+			pl, err = s.SimulateInsert(tbl, sec, dup, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if pl.Dup != nil {
 				t.Errorf("%s is not unique but reports a duplicate", sec.Name)
 			}
-			if got := recKey(pl.Prev); got != pl.Key(pl.Next) && compareKey(got, pl.Key(pl.Next)) > 0 {
-				t.Errorf("the copy goes after %s", got)
+			if got := recKey(pl.Prev); got != dup {
+				t.Errorf("the copy of %s goes after %s", dup, got)
+			}
+
+			// A duplicate waits for an X lock on the record it found.
+			pl, _ = s.SimulateInsert(tbl, pk, "1234", nil)
+			x := []Lock{{Index: pk, PageNo: pl.Leaf.No, HeapNo: pl.Dup.HeapNo, Mode: "X,REC_NOT_GAP"}}
+			if pl, _ = s.SimulateInsert(tbl, pk, "1234", x); pl.Blocked == nil {
+				t.Error("the duplicate check does not wait for the X lock on the record")
+			}
+			x[0].Mode = "X,GAP"
+			if pl, _ = s.SimulateInsert(tbl, pk, "1234", x); pl.Blocked != nil {
+				t.Error("a gap lock blocks the duplicate check")
 			}
 		})
 	}
@@ -123,7 +135,7 @@ func TestInsertSplit(t *testing.T) {
 
 			// No pattern: the middle record starts the new page on the right.
 			pl.Leaf.Hdr.LastInsert = 0
-			pl.place(true)
+			pl.place()
 			sp := pl.Split
 			if pl.Place != "split" || sp == nil {
 				t.Fatalf("place %q", pl.Place)
@@ -138,7 +150,7 @@ func TestInsertSplit(t *testing.T) {
 
 			// An ascending run: the cut is two records after the new one.
 			pl.Leaf.Hdr.LastInsert = uint16(pl.Prev.Off)
-			pl.place(true)
+			pl.place()
 			sp = pl.Split
 			if sp.At != pl.Leaf.Recs[next+1] || !sp.Right || sp.Moved != sup-next-1 || !sp.InsertLeft {
 				t.Errorf("ascending split = %+v, want at record %d, %d moved, insert left", sp, next+1, sup-next-1)
@@ -147,7 +159,7 @@ func TestInsertSplit(t *testing.T) {
 			// A descending run: the record before the new one goes with the
 			// lower half to a new page on the left.
 			pl.Leaf.Hdr.LastInsert = uint16(pl.Next.Off)
-			pl.place(true)
+			pl.place()
 			sp = pl.Split
 			if sp.At != pl.Prev || sp.Right || sp.Moved != prev-1 || sp.InsertLeft {
 				t.Errorf("descending split = %+v, want at record %d, %d moved left, insert right", sp, prev, prev-1)
@@ -157,11 +169,12 @@ func TestInsertSplit(t *testing.T) {
 			// sixteenth of the page is still free.
 			pl.Size = 100
 			pl.Leaf.Hdr.LastInsert = uint16(pl.Prev.Off)
-			pl.place(true)
+			pl.place()
 			if want := spaceReserve+pl.Size > pl.FreeReorganized; (pl.Place == "split") != want {
 				t.Errorf("place %q with %d free and a run; the reserve rule says split=%v", pl.Place, pl.FreeReorganized, want)
 			}
-			pl.place(false)
+			pl.Clustered = false
+			pl.place()
 			if pl.Place == "split" {
 				t.Errorf("a secondary index leaf keeps no reserve, yet %d bytes split it with %d free", pl.Size, pl.FreeReorganized)
 			}
