@@ -22,7 +22,20 @@ func TestFindKey(t *testing.T) {
 			m.tables.cur = tableIdx(&m.tables, "types")
 			press(m, tea.KeyEnter)
 
-			key(t, m, "f", "1", "2", "3", "4")
+			// f lists the indexes with the clustered one selected; enter asks for the key.
+			key(t, m, "f")
+			if m.findWiz == nil || m.pagesTitle != "FIND  choose the index" {
+				t.Fatalf("f did not open the index picker: %q", m.pagesTitle)
+			}
+			if rows := rowLabels(&m.pages); len(rows) != 2 || !strings.HasPrefix(rows[0], "PRIMARY") || !strings.HasPrefix(rows[1], "idx_varchar") {
+				t.Fatalf("index picker = %v", rows)
+			}
+			press(m, tea.KeyEnter)
+			press(m, tea.KeyEnter)
+			if m.prompt.kind != promptFind || m.status.err == "" {
+				t.Fatalf("enter with no key: prompt %+v, err %q", m.prompt, m.status.err)
+			}
+			key(t, m, "1", "2", "3", "4")
 			if m.prompt.kind != promptFind || m.prompt.text != "1234" {
 				t.Fatalf("find prompt = %+v", m.prompt)
 			}
@@ -91,8 +104,22 @@ func TestFindKey(t *testing.T) {
 				t.Fatalf("the page tree was not restored: %v", rowLabels(&m.pages))
 			}
 
+			// Esc from the key goes back to the index list, and from there out.
+			key(t, m, "f")
+			press(m, tea.KeyEnter)
+			press(m, tea.KeyEsc)
+			if m.findWiz == nil || m.prompt.kind != promptNone || m.pagesTitle != "FIND  choose the index" {
+				t.Fatalf("esc from the key: wiz %v, prompt %+v, title %q", m.findWiz, m.prompt, m.pagesTitle)
+			}
+			press(m, tea.KeyEsc)
+			if m.findWiz != nil || m.pagesTitle != "PAGES" || !hasLabel(rowLabels(&m.pages), "PRIMARY") {
+				t.Fatalf("esc from the list: wiz %v, title %q, rows %v", m.findWiz, m.pagesTitle, rowLabels(&m.pages))
+			}
+
 			// A key that is not in the tree still shows how far the search got.
-			key(t, m, "f", "1", "2", "5", "0")
+			key(t, m, "f")
+			press(m, tea.KeyEnter)
+			key(t, m, "1", "2", "5", "0")
 			press(m, tea.KeyEnter)
 			rows = rowLabels(&m.pages)
 			if !hasLabel(rows, "no record with key") {

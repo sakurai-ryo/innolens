@@ -50,6 +50,7 @@ type Model struct {
 	view       readView
 	locks      *lockSet // the last `l`: marked on every page opened while it stands
 	lockWiz    *lockWizard
+	findWiz    *findWizard
 	base       string // baseline datadir the page detail diffs against; "" if none
 	hexTop     int
 	pagesTitle string
@@ -130,6 +131,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.lockBack()
 					break
 				}
+				if m.findWiz != nil {
+					m.findBack()
+					break
+				}
 				if (strings.HasPrefix(m.pagesTitle, "FIND ") || strings.HasPrefix(m.pagesTitle, "LOCKS ")) && m.space != nil {
 					m.openTable(m.space.Path)
 					break
@@ -151,8 +156,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cur().expand()
 		case "r":
 			m.reload()
+		case "f":
+			if m.focus == focusPages && m.searchable() && !m.picking() {
+				m.startFind()
+			}
 		case "l":
-			if m.focus == focusPages && m.searchable() && m.lockWiz == nil {
+			if m.focus == focusPages && m.searchable() && !m.picking() {
 				m.startLock()
 			}
 		case "n":
@@ -180,8 +189,8 @@ const (
 )
 
 // prompt is the one-line text input the panes share: `/` filters the datadir,
-// `f` searches an index for a key, `v` sets the read view, and the `l` picker
-// asks for its key values through one.
+// `v` sets the read view, and the `f` and `l` pickers ask for their key values
+// through one.
 type prompt struct {
 	kind int
 	text string
@@ -236,13 +245,11 @@ func (m *Model) promptKey(msg tea.KeyMsg) bool {
 func (m *Model) openPrompt(key string) bool {
 	kind := promptNone
 	switch {
-	case m.lockWiz != nil:
+	case m.picking():
 		// The picker owns the pane until it is done or left with esc.
 		return false
 	case key == "/" && m.focus == focusTables:
 		kind = promptFilter
-	case key == "f" && m.focus == focusPages && m.searchable():
-		kind = promptFind
 	case key == "v" && m.focus == focusDetail:
 		kind = promptView
 	default:
@@ -267,15 +274,25 @@ func (m *Model) closePrompt() {
 		m.setQuery("")
 	}
 	m.prompt = prompt{}
-	if m.lockWiz != nil {
+	switch {
+	case m.lockWiz != nil:
 		m.lockBack()
+	case m.findWiz != nil:
+		m.findBack()
 	}
 }
+
+// picking says whether the f or l picker has the page pane.
+func (m *Model) picking() bool { return m.lockWiz != nil || m.findWiz != nil }
 
 func (m *Model) commitPrompt() {
 	switch m.prompt.kind {
 	case promptFind:
-		m.findKey(m.prompt.text)
+		// findKey keeps the prompt open when nothing was typed.
+		text := m.prompt.text
+		m.prompt = prompt{}
+		m.findKey(text)
+		return
 	case promptView:
 		m.setReadView(m.prompt.text)
 	case promptLock:
@@ -332,6 +349,8 @@ func (m *Model) enter() {
 		m.findIn(d.ix, d.key)
 	case lockChoice:
 		m.lockPick(d)
+	case findChoice:
+		m.findPick(d)
 	case pageJump:
 		m.jumpToPage(d.space, d.page)
 	case *innodb.Node:
@@ -355,7 +374,7 @@ func (m *Model) openTable(path string) {
 		m.space.Close()
 		m.space = nil
 	}
-	m.table, m.page, m.lockWiz = nil, nil, nil
+	m.table, m.page, m.lockWiz, m.findWiz = nil, nil, nil, nil
 	s, err := innodb.Open(path)
 	if err != nil {
 		m.status = status{err: err.Error()}
@@ -615,12 +634,12 @@ func (m *Model) footer() string {
 	case m.prompt.kind == promptFilter:
 		keys = "type to filter (db.table)   ↑↓ move   ←→ fold   enter open   esc clear"
 	case m.prompt.kind == promptFind:
-		keys = "find key: " + m.prompt.text + "▏   enter search   esc cancel"
+		keys = "find key: " + m.prompt.text + "▏   enter search   esc back"
 	case m.prompt.kind == promptView:
 		keys = "read view trx_id: " + m.prompt.text + "▏   enter apply   esc cancel"
 	case m.prompt.kind == promptLock:
 		keys = m.lockWiz.lockValueLabel() + ": " + m.prompt.text + "▏   enter next   esc back"
-	case m.lockWiz != nil:
+	case m.picking():
 		keys = "↑↓ move   enter choose   esc back"
 	case m.focus == focusTables:
 		keys = "↑↓ move   ←→ fold   enter open   / search   esc quit   r reload   ? help"

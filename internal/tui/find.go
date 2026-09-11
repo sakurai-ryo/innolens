@@ -50,18 +50,77 @@ func (m *Model) currentIndex() *innodb.IndexDef {
 	return nil
 }
 
-// findKey replaces the page tree with the descent a lookup for key makes: one
-// row per page read, root first, ending on the record it stopped at.
-func (m *Model) findKey(key string) {
-	if key == "" {
-		return
-	}
-	ix := m.currentIndex()
-	if ix == nil {
+// findWizard is the `f` picker: the index is chosen from a list, then the key
+// is typed. The page tree it replaced is kept to go back to on esc.
+type findWizard struct {
+	ix    *innodb.IndexDef
+	saved list
+	title string
+}
+
+// findChoice is one index row: Enter picks it and asks for the key.
+type findChoice struct{ ix *innodb.IndexDef }
+
+// startFind opens the picker over the page tree, with the index the cursor
+// was in already selected.
+func (m *Model) startFind() {
+	if m.space == nil || m.table == nil {
 		m.status.err = "no index to search: this tablespace has no table definition"
 		return
 	}
-	m.findIn(ix, key)
+	m.findWiz = &findWizard{saved: m.pages, title: m.pagesTitle}
+	root := &node{}
+	cur := 0
+	for i, ix := range m.table.Indexes {
+		if ix == m.currentIndex() {
+			cur = i
+		}
+		root.children = append(root.children, &node{label: ix.Name + "  (" + ix.Cols[0].Name + ")",
+			note: "look the key up in this B+tree; the key is its first column", hkey: "find index",
+			data: findChoice{ix}})
+	}
+	m.pages = newList(root)
+	m.pages.cur = cur
+	m.pagesTitle = "FIND  choose the index"
+	m.focus = focusPages
+}
+
+// findPick takes the chosen index and asks for the key.
+func (m *Model) findPick(c findChoice) {
+	if m.findWiz == nil {
+		return
+	}
+	m.findWiz.ix = c.ix
+	m.prompt = prompt{kind: promptFind}
+	m.pagesTitle = "FIND  " + c.ix.Name + " (" + c.ix.Cols[0].Name + ")"
+}
+
+// findBack is esc: from the key back to the index list, from the list back
+// out of the picker.
+func (m *Model) findBack() {
+	w := m.findWiz
+	if w.ix != nil {
+		w.ix = nil
+		m.pagesTitle = "FIND  choose the index"
+		return
+	}
+	m.findWiz = nil
+	m.pages, m.pagesTitle = w.saved, w.title
+}
+
+// findKey runs the lookup the picker was set up for.
+func (m *Model) findKey(key string) {
+	w := m.findWiz
+	if w == nil || w.ix == nil {
+		return
+	}
+	if key = strings.TrimSpace(key); key == "" {
+		m.status.err = "a key is needed"
+		m.prompt = prompt{kind: promptFind}
+		return
+	}
+	m.findWiz = nil
+	m.findIn(w.ix, key)
 }
 
 // findIn is the lookup itself, for a tree the caller already knows.
@@ -80,6 +139,7 @@ func (m *Model) findIn(ix *innodb.IndexDef, key string) {
 	m.pages = newList(root)
 	m.pagesTitle = fmt.Sprintf("FIND %s IN %s", key, ix.Name)
 	m.focus = focusPages
+	m.status.err = ""
 	m.status.info = fmt.Sprintf("%d page(s) read to look up %s", len(steps), key)
 }
 

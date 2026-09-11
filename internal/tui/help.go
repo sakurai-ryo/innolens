@@ -85,6 +85,8 @@ none of this is on disk: a server keeps its locks in memory, per transaction`,
 	"lock": `One record lock, spelled as performance_schema.data_locks would.
 X or S alone is next-key, the record and the gap before it; ,GAP is the gap
 ,REC_NOT_GAP the record only; on the supremum, the gap after the last record`,
+	"find index": `One B+tree of the table: enter picks it, then the key is typed.
+the lookup narrows on the first column of the index only`,
 	"descent": `One page of a key lookup, root first, one page per level of the tree.
 a node page picks the last child whose key does not sort after the key
 the leaf row is where the record is, or where it would be inserted`,

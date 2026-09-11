@@ -45,8 +45,8 @@ page against the same page in `before`.
   its previous version, and keep going from there.
 - A `versions` section under each record rebuilds those previous versions into
   full rows. `v` sets a read view, marking the version that transaction reads.
-- Key lookup with `f`: the B+tree descent drawn as one row per page read, root to
-  leaf, ending on the record itself.
+- Key lookup with `f`: pick the index, type the key, and the B+tree descent is
+  drawn as one row per page read, root to leaf, ending on the record itself.
 - A `clustered index` link under every secondary index leaf record: it shows the
   primary key the record stores, and `enter` looks that key up in the clustered
   index as the descent above.
