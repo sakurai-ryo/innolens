@@ -28,7 +28,7 @@ type Model struct {
 	ann           list
 	focus         int
 	space         *innodb.Space
-	table         *innodb.Table
+	defs          []*innodb.Table // one per B+tree owner; a shared tablespace such as mysql.ibd holds many
 	page          *innodb.Page
 	redo          *redoIndex
 	regions       []uint8
@@ -407,7 +407,7 @@ func (m *Model) openTable(path string) {
 		m.space.Close()
 		m.space = nil
 	}
-	m.table, m.page, m.lockWiz, m.findWiz = nil, nil, nil, nil
+	m.defs, m.page, m.lockWiz, m.findWiz = nil, nil, nil, nil
 	s, err := innodb.Open(path)
 	if err != nil {
 		m.status = status{err: err.Error()}
@@ -416,13 +416,13 @@ func (m *Model) openTable(path string) {
 	// A missing table definition is not fatal: the pages stay browsable, just
 	// without column decoding. An undo tablespace never has one, and that is
 	// where a DB_ROLL_PTR lands, so its absence is not worth reporting there.
-	t, err := s.ReadTable()
-	m.space, m.table = s, t
-	m.pages = newList(pageTree(s, t))
+	ts, err := s.ReadTables()
+	m.space, m.defs = s, ts
+	m.pages = newList(pageTree(s, ts))
 	m.focus, m.pagesTitle = focusPages, "PAGES"
 	name := filepath.Base(path)
-	if t != nil {
-		name = t.Schema + "." + t.Name
+	if len(ts) == 1 {
+		name = ts[0].Schema + "." + ts[0].Name
 	}
 	m.status = status{
 		table: name,
@@ -473,7 +473,7 @@ func (m *Model) openPage(no uint32) {
 		return
 	}
 	m.diff, m.rep = nil, nil
-	m.showPage(s.ID, m.table, p, "")
+	m.showPage(s.ID, innodb.TableFor(m.defs, p), p, "")
 }
 
 // jumpToPage opens the page a redo record modified. The tablespace is closed
@@ -481,7 +481,7 @@ func (m *Model) openPage(no uint32) {
 func (m *Model) jumpToPage(space, pageNo uint32) {
 	path, ok := m.dir.spaces[space]
 	if !ok {
-		m.status.err = fmt.Sprintf("space %d is not a file-per-table tablespace under %s", space, m.path)
+		m.status.err = fmt.Sprintf("space %d has no .ibd file under %s", space, m.path)
 		return
 	}
 	s, err := innodb.Open(path)
@@ -505,9 +505,10 @@ func (m *Model) jumpToPage(space, pageNo uint32) {
 		return s.Page(pageNo)
 	}
 	m.diff, m.rep = nil, nil
-	t, err := s.ReadTable()
+	ts, err := s.ReadTables()
+	t := innodb.TableFor(ts, p)
 	from := path
-	if err == nil && t != nil {
+	if t != nil {
 		from = t.Schema + "." + t.Name
 	}
 	m.showPage(space, t, p, from)

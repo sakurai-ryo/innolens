@@ -8,8 +8,9 @@ to individual bytes and shows what each one means, so you can see how a row, a
 statement, or a version chain is actually stored on disk.
 
 It targets MySQL 8.0.30 and later, and 8.4. It reads uncompressed, unencrypted,
-16KB-page, file-per-table tablespaces. Files are opened read-only, so it is safe
-to point at a running server's datadir.
+16KB-page tablespaces: file-per-table `.ibd` files, `mysql.ibd` and general
+tablespaces. The system tablespace (`ibdata1`) is listed but not opened. Files
+are opened read-only, so it is safe to point at a running server's datadir.
 
 A true-color terminal with a Nerd Font is assumed. Set `INNOLENS_ICONS=0` to fall
 back to plain Unicode symbols if glyphs render as tofu.
@@ -28,6 +29,10 @@ page against the same page in `before`.
 
 - Browse every table in a datadir, then walk each index B+tree and the remaining
   pages of its tablespace.
+- `mysql.ibd` and general tablespaces open as one section per table, so the
+  data dictionary itself (`mysql.tables`, `mysql.columns`, ...) is browsable the
+  same way. Key lookup, lock and insert simulation work on the table the cursor
+  is in.
 - Filter the datadir tree with `/`, by schema, by table, or by `schema.table`.
 - Page detail view: hex dump, a region minimap of the whole page, and a tree of
   structural annotations that highlights the bytes it describes.

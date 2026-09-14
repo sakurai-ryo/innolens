@@ -42,6 +42,7 @@ func (c Col) presentIn(v uint8) bool {
 // IndexDef describes the physical field layout of one B+tree.
 type IndexDef struct {
 	Name          string
+	Table         *Table // the table the tree belongs to; several share a space such as mysql.ibd
 	TableID       uint64 // se_private_id of the owning table
 	ID            uint64
 	RootPage      uint32

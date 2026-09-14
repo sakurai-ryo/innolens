@@ -66,7 +66,7 @@ const (
 
 // startLock opens the picker over the page tree.
 func (m *Model) startLock() {
-	if m.space == nil || m.table == nil {
+	if m.space == nil || len(m.defs) == 0 {
 		m.status.err = "no index to lock: this tablespace has no table definition"
 		return
 	}
@@ -97,7 +97,7 @@ func (m *Model) lockStep() {
 		add("UPDATE ... SET (a column no index covers)", "X locks, taken while the rows are read", "update")
 		add("DELETE", "X locks, taken while the rows are read", "delete")
 	case lockStepIndex:
-		for i, ix := range m.table.Indexes {
+		for i, ix := range w.ix.Table.Indexes {
 			if ix == w.ix {
 				cur = i
 			}
@@ -158,7 +158,7 @@ func (m *Model) lockPick(c lockChoice) {
 	case lockStepOp:
 		w.st.Op = c.value
 	case lockStepIndex:
-		for _, ix := range m.table.Indexes {
+		for _, ix := range w.ix.Table.Indexes {
 			if ix.Name == c.value {
 				w.ix = ix
 			}
@@ -241,7 +241,7 @@ func (m *Model) lockValue(text string) {
 // runLock simulates the statement on the index and replaces the page tree with
 // the pages it locked, one row each.
 func (m *Model) runLock(st innodb.LockStmt, ix *innodb.IndexDef) {
-	locks, err := m.space.SimulateLocks(m.table, ix, st)
+	locks, err := m.space.SimulateLocks(ix.Table, ix, st)
 	m.locks = &lockSet{stmt: st, locks: locks}
 	root := &node{}
 	type pageKey struct {
@@ -275,7 +275,7 @@ func (m *Model) runLock(st innodb.LockStmt, ix *innodb.IndexDef) {
 	if st.RC {
 		iso = "READ COMMITTED"
 	}
-	m.status.info = st.SQL(m.table.Name, ix.Cols[0].Name) + "  under " + iso
+	m.status.info = st.SQL(ix.Table.Name, ix.Cols[0].Name) + "  under " + iso
 }
 
 // lockPageNode is one page the statement locked something on. Enter opens it

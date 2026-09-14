@@ -28,7 +28,7 @@ type indexRef struct{ ix *innodb.IndexDef }
 // searchable says whether the right pane is showing B+trees a key can be looked
 // up in. The redo pane is not one, even while a table is still open behind it.
 func (m *Model) searchable() bool {
-	return m.space != nil && m.table != nil && m.pagesTitle != "REDO"
+	return m.space != nil && len(m.defs) > 0 && m.pagesTitle != "REDO"
 }
 
 // currentIndex is the B+tree the cursor is in, falling back to the clustered
@@ -44,8 +44,17 @@ func (m *Model) currentIndex() *innodb.IndexDef {
 			}
 		}
 	}
-	if m.table != nil && len(m.table.Indexes) > 0 {
-		return m.table.Indexes[0]
+	if len(m.defs) > 0 {
+		return m.defs[0].Indexes[0]
+	}
+	return nil
+}
+
+// curTable is the table the cursor is in. The pickers list its indexes alone:
+// a shared tablespace such as mysql.ibd holds dozens of tables.
+func (m *Model) curTable() *innodb.Table {
+	if ix := m.currentIndex(); ix != nil {
+		return ix.Table
 	}
 	return nil
 }
@@ -72,7 +81,7 @@ type findChoice struct{ ix *innodb.IndexDef }
 // startFind opens the picker over the page tree, with the index the cursor
 // was in already selected.
 func (m *Model) startFind(insert bool) {
-	if m.space == nil || m.table == nil {
+	if m.space == nil || len(m.defs) == 0 {
 		m.status.err = "no index to search: this tablespace has no table definition"
 		return
 	}
@@ -84,7 +93,7 @@ func (m *Model) startFind(insert bool) {
 	}
 	root := &node{}
 	cur := 0
-	for i, ix := range m.table.Indexes {
+	for i, ix := range m.curTable().Indexes {
 		if ix == m.currentIndex() {
 			cur = i
 		}

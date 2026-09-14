@@ -23,6 +23,9 @@ records address a page by space id and page number`,
 	"schema": `A database. Each .ibd file under it is one table.
 the directory name is the schema name, encoded when it is not ASCII
 shared tablespaces are not in here; they sit next to the schemas`,
+	"shared tablespace": `One file holding many tables: mysql.ibd, or a general tablespace.
+mysql.ibd is the data dictionary: mysql.tables, mysql.columns and the rest
+the right pane lists one section per table, from the SDI of the file`,
 
 	// sections of the annotation tree
 	"FIL header": `The 38 bytes every page starts with, whatever its type.
@@ -618,6 +621,9 @@ NULL columns never get here: the null bitmap answers first`,
 	"mtr": `One mini-transaction: the smallest group of changes applied together.
 recovery applies all of its records or none of them
 a single statement can produce several`,
+	"table section": `One table of a shared tablespace: its definition and its B+trees.
+the file holds many; this one is told apart by the index ids on its pages
+mysql.ibd keeps the data dictionary here, mysql.tables and the rest`,
 	"index tree": `One index of the table, starting from its root page.
 expanding a page reads its children then, not before
 the leaves are the bottom row of the tree`,

@@ -67,18 +67,8 @@ func TestCreateTableClauses(t *testing.T) {
 		{Name: "DB_TRX_ID", Type: ddLong, CollationID: 63, Hidden: ddHiddenSE},
 	}
 	dt.Indexes = []ddIndex{
-		{Name: "PRIMARY", Type: 1, IsVisible: true, Elements: []struct {
-			ColumnOpx int  `json:"column_opx"`
-			Length    uint `json:"length"`
-			Hidden    bool `json:"hidden"`
-			Order     int  `json:"order"`
-		}{{ColumnOpx: 0, Length: 0xFFFFFFFF, Order: 2}, {ColumnOpx: 7, Length: 0xFFFFFFFF, Hidden: true}}},
-		{Name: "u", Type: 2, IsVisible: false, Algorithm: 2, IsAlgorithmExplicit: true, Comment: "c", Elements: []struct {
-			ColumnOpx int  `json:"column_opx"`
-			Length    uint `json:"length"`
-			Hidden    bool `json:"hidden"`
-			Order     int  `json:"order"`
-		}{{ColumnOpx: 1, Length: 12, Order: 3}}},
+		{Name: "PRIMARY", Type: 1, IsVisible: true, Elements: []ddIndexElement{{ColumnOpx: 0, Length: 0xFFFFFFFF, Order: 2}, {ColumnOpx: 7, Length: 0xFFFFFFFF, Hidden: true}}},
+		{Name: "u", Type: 2, IsVisible: false, Algorithm: 2, IsAlgorithmExplicit: true, Comment: "c", Elements: []ddIndexElement{{ColumnOpx: 1, Length: 12, Order: 3}}},
 	}
 	dt.ForeignKeys = []ddForeignKey{{Name: "fk", UpdateRule: 1, DeleteRule: 3, ReferencedTableSchemaName: "other", ReferencedTableName: "p",
 		Elements: []struct {
@@ -106,5 +96,43 @@ func TestCreateTableClauses(t *testing.T) {
 		"-- partitioned: the PARTITION BY clause is not rebuilt"
 	if got := strings.Join(createTable(dt), "\n"); got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// TestClusteredIndexWithoutPrimary: a table with no primary key but a UNIQUE
+// NOT NULL index uses it as the clustered index. The SDI still lists it
+// first, with DB_TRX_ID appended, and its key is what stands before that.
+func TestClusteredIndexWithoutPrimary(t *testing.T) {
+	dt := &ddTable{Name: "t", SchemaRef: "s", Engine: "InnoDB", CollationID: 45, RowFormat: 2}
+	dt.Columns = []ddColumn{
+		{Name: "a", Type: ddLong, ColumnTypeUTF8: "int", CollationID: 63, Hidden: 1},
+		{Name: "b", Type: ddLong, ColumnTypeUTF8: "int", CollationID: 63, Hidden: 1},
+		{Name: "c", Type: ddLong, ColumnTypeUTF8: "int", CollationID: 63, Hidden: 1, IsNullable: true, DefaultNull: true},
+		{Name: "DB_TRX_ID", Type: ddLong, CollationID: 63, Hidden: ddHiddenSE},
+		{Name: "DB_ROLL_PTR", Type: ddLong, CollationID: 63, Hidden: ddHiddenSE},
+	}
+	el := func(opx int, hidden bool) ddIndexElement {
+		return ddIndexElement{ColumnOpx: opx, Length: 0xFFFFFFFF, Hidden: hidden, Order: 2}
+	}
+	dt.Indexes = []ddIndex{
+		{Name: "a", Type: 2, IsVisible: true, SePrivateData: "id=10;root=4;",
+			Elements: []ddIndexElement{el(0, false), el(1, false), el(3, true), el(4, true), el(2, true)}},
+		{Name: "c", Type: 3, IsVisible: true, SePrivateData: "id=11;root=5;",
+			Elements: []ddIndexElement{el(2, false), el(0, true), el(1, true)}},
+	}
+	tbl, err := buildTable(dt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clust, sec := tbl.Indexes[0], tbl.Indexes[1]
+	if clust.NKey != 2 || clust.NUniqueInTree != 2 || !clust.Unique || clust.Table != tbl {
+		t.Errorf("clustered: NKey %d NUniqueInTree %d Unique %v", clust.NKey, clust.NUniqueInTree, clust.Unique)
+	}
+	if sec.NKey != 1 || sec.NUniqueInTree != 3 {
+		t.Errorf("secondary: NKey %d NUniqueInTree %d", sec.NKey, sec.NUniqueInTree)
+	}
+	dt.Indexes = dt.Indexes[1:]
+	if _, err := buildTable(dt); err == nil {
+		t.Error("a table whose first index carries no DB_TRX_ID built as if it had a clustered index")
 	}
 }

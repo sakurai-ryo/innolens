@@ -60,8 +60,8 @@ func TestBrowse(t *testing.T) {
 			if m.focus != focusPages {
 				t.Fatalf("enter on a table did not focus the page tree: %s", m.status)
 			}
-			if m.table.Name != "types" {
-				t.Fatalf("table = %q", m.table.Name)
+			if m.defs[0].Name != "types" {
+				t.Fatalf("table = %q", m.defs[0].Name)
 			}
 
 			pageRows := rowLabels(&m.pages)
@@ -205,8 +205,8 @@ func TestOpenTableWithoutSDI(t *testing.T) {
 	if m.focus != focusPages {
 		t.Fatalf("enter did not focus the page tree: %s", m.status)
 	}
-	if m.table != nil {
-		t.Fatalf("table = %v, want nil", m.table)
+	if m.defs != nil {
+		t.Fatalf("tables = %v, want nil", m.defs)
 	}
 	if !hasLabel(rowLabels(&m.pages), "Other pages") {
 		t.Fatalf("page tree %v has no pages", rowLabels(&m.pages))

@@ -18,7 +18,7 @@ func (m *Model) insertIn(ix *innodb.IndexDef, key string) {
 	if m.locks != nil {
 		locks = m.locks.locks
 	}
-	pl, err := m.space.SimulateInsert(m.table, ix, key, locks)
+	pl, err := m.space.SimulateInsert(ix.Table, ix, key, locks)
 	root := &node{}
 	if err != nil {
 		if pl != nil {

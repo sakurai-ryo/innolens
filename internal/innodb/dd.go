@@ -76,19 +76,21 @@ type ddColumn struct {
 }
 
 type ddIndex struct {
-	Name          string `json:"name"`
-	Type          int    `json:"type"` // 1 PRIMARY, 2 UNIQUE, 3 MULTIPLE, 4 FULLTEXT, 5 SPATIAL
-	SePrivateData string `json:"se_private_data"`
-	Elements      []struct {
-		ColumnOpx int  `json:"column_opx"`
-		Length    uint `json:"length"`
-		Hidden    bool `json:"hidden"`
-		Order     int  `json:"order"` // 2 ASC, 3 DESC
-	} `json:"elements"`
-	Algorithm           int    `json:"algorithm"` // 2 BTREE, 3 RTREE, 4 HASH, 5 FULLTEXT
-	IsAlgorithmExplicit bool   `json:"is_algorithm_explicit"`
-	IsVisible           bool   `json:"is_visible"`
-	Comment             string `json:"comment"`
+	Name                string           `json:"name"`
+	Type                int              `json:"type"` // 1 PRIMARY, 2 UNIQUE, 3 MULTIPLE, 4 FULLTEXT, 5 SPATIAL
+	SePrivateData       string           `json:"se_private_data"`
+	Elements            []ddIndexElement `json:"elements"`
+	Algorithm           int              `json:"algorithm"` // 2 BTREE, 3 RTREE, 4 HASH, 5 FULLTEXT
+	IsAlgorithmExplicit bool             `json:"is_algorithm_explicit"`
+	IsVisible           bool             `json:"is_visible"`
+	Comment             string           `json:"comment"`
+}
+
+type ddIndexElement struct {
+	ColumnOpx int  `json:"column_opx"`
+	Length    uint `json:"length"`
+	Hidden    bool `json:"hidden"`
+	Order     int  `json:"order"` // 2 ASC, 3 DESC
 }
 
 type ddForeignKey struct {
@@ -141,12 +143,16 @@ func (t *Table) Index(id uint64) *IndexDef {
 	return nil
 }
 
-// ReadTable reads the SDI and builds the index definitions.
-func (s *Space) ReadTable() (*Table, error) {
+// ReadTables builds every table the SDI describes: one in a file-per-table
+// space, all of them in a shared one such as mysql.ibd. A table that cannot be
+// built is left out and reported through err, so the rest stay browsable.
+func (s *Space) ReadTables() ([]*Table, error) {
 	recs, err := s.ReadSDI()
 	if err != nil {
 		return nil, err
 	}
+	var ts []*Table
+	var firstErr error
 	for _, r := range recs {
 		if r.Type != SDITypeTable {
 			continue
@@ -159,7 +165,10 @@ func (s *Space) ReadTable() (*Table, error) {
 		}
 		t, err := buildTable(&doc.Object)
 		if err != nil {
-			return nil, err
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
 		}
 		var pretty bytes.Buffer
 		if err := json.Indent(&pretty, r.JSON, "", "  "); err == nil {
@@ -167,9 +176,42 @@ func (s *Space) ReadTable() (*Table, error) {
 		} else {
 			t.JSON = r.JSON
 		}
-		return t, nil
+		ts = append(ts, t)
 	}
-	return nil, fmt.Errorf("no table SDI record in %s", s.Path)
+	if len(ts) == 0 {
+		if firstErr != nil {
+			return nil, firstErr
+		}
+		return nil, fmt.Errorf("no table SDI record in %s", s.Path)
+	}
+	return ts, firstErr
+}
+
+// ReadTable is the table of a file-per-table space.
+func (s *Space) ReadTable() (*Table, error) {
+	ts, err := s.ReadTables()
+	if err != nil {
+		return nil, err
+	}
+	return ts[0], nil
+}
+
+// TableFor is the table whose B+tree an index page belongs to; nil for a page
+// of no tree, or of a tree none of the tables describes.
+func TableFor(ts []*Table, p *Page) *Table {
+	if p.FIL.Type != FIL_PAGE_INDEX {
+		return nil
+	}
+	ip, err := p.ParseIndex(nil)
+	if err != nil {
+		return nil
+	}
+	for _, t := range ts {
+		if t.Index(ip.Hdr.IndexID) != nil {
+			return t
+		}
+	}
+	return nil
 }
 
 func sePrivate(s string) map[string]string {
@@ -192,23 +234,32 @@ func buildTable(dt *ddTable) (*Table, error) {
 	for i := range dt.Columns {
 		cols[i] = buildCol(&dt.Columns[i])
 	}
-	for _, di := range dt.Indexes {
+	for i, di := range dt.Indexes {
 		if di.Type == 4 || di.Type == 5 {
 			continue // FULLTEXT / SPATIAL are not B+trees we decode
 		}
 		sp := sePrivate(di.SePrivateData)
 		id, _ := strconv.ParseUint(sp["id"], 10, 64)
 		root, _ := strconv.ParseUint(sp["root"], 10, 32)
-		ix := &IndexDef{Name: di.Name, TableID: dt.SePrivateID, ID: id, RootPage: uint32(root), Unique: di.Type <= 2}
+		ix := &IndexDef{Name: di.Name, Table: t, TableID: dt.SePrivateID, ID: id, RootPage: uint32(root), Unique: di.Type <= 2}
+		// The clustered index comes first and is the one InnoDB appended
+		// DB_TRX_ID to. It is not always PRIMARY: with no primary key the
+		// first UNIQUE NOT NULL index is promoted, as in mysql.index_column_usage,
+		// and its key is then what stands before DB_TRX_ID.
+		clust := i == 0 && trxIDPos(dt.Columns, di.Elements) >= 0
 		nKey := 0
-		for _, e := range di.Elements {
-			if !e.Hidden {
-				nKey++
+		if clust {
+			nKey = trxIDPos(dt.Columns, di.Elements)
+		} else {
+			for _, e := range di.Elements {
+				if !e.Hidden {
+					nKey++
+				}
 			}
 		}
 		ix.NKey = nKey
 		switch {
-		case di.Type == 1 && hasPhysicalPos(dt.Columns):
+		case clust && hasPhysicalPos(dt.Columns):
 			// Instant ADD/DROP rewrites the physical order; dropped columns only exist here.
 			type pc struct {
 				pos int
@@ -242,7 +293,7 @@ func buildTable(dt *ddTable) (*Table, error) {
 				}
 				ix.Cols = append(ix.Cols, c)
 			}
-			if di.Type == 1 {
+			if clust {
 				ix.NUniqueInTree = nKey
 			} else {
 				// secondary node pointers carry key columns plus the appended PK columns
@@ -251,10 +302,21 @@ func buildTable(dt *ddTable) (*Table, error) {
 		}
 		t.Indexes = append(t.Indexes, ix)
 	}
-	if len(t.Indexes) == 0 || t.Indexes[0].Name != "PRIMARY" {
-		return nil, fmt.Errorf("table %s: no PRIMARY index (tables without a primary key are unsupported)", dt.Name)
+	if len(t.Indexes) == 0 || trxIDPos(dt.Columns, dt.Indexes[0].Elements) < 0 {
+		return nil, fmt.Errorf("table %s: no clustered index in the SDI (tables without a primary key are unsupported)", dt.Name)
 	}
 	return t, nil
+}
+
+// trxIDPos is where DB_TRX_ID sits among the elements of an index, -1 when it
+// is not there: only the clustered index carries it.
+func trxIDPos(cols []ddColumn, els []ddIndexElement) int {
+	for i, e := range els {
+		if e.ColumnOpx < len(cols) && cols[e.ColumnOpx].Hidden == ddHiddenSE && cols[e.ColumnOpx].Name == "DB_TRX_ID" {
+			return i
+		}
+	}
+	return -1
 }
 
 func hasPhysicalPos(cols []ddColumn) bool {

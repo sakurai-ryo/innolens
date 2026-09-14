@@ -74,7 +74,7 @@ func TestInsertKey(t *testing.T) {
 			// A locking read of the missing key leaves a gap lock on the record
 			// after it, which is what the insert would wait for.
 			st, _ := innodb.ParseLockStmt("x = 1250")
-			locks, err := m.space.SimulateLocks(m.table, m.table.Indexes[0], st)
+			locks, err := m.space.SimulateLocks(m.defs[0], m.defs[0].Indexes[0], st)
 			if err != nil {
 				t.Fatal(err)
 			}

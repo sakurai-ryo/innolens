@@ -143,11 +143,11 @@ func (m *Model) pageAndIndex(space, pageNo uint32) (*innodb.Page, *innodb.IndexD
 	if err != nil {
 		return p, nil
 	}
-	t, err := s.ReadTable()
-	if err != nil {
-		return p, nil
+	ts, _ := s.ReadTables()
+	if t := innodb.TableFor(ts, p); t != nil {
+		return p, t.Index(ip.Hdr.IndexID)
 	}
-	return p, t.Index(ip.Hdr.IndexID)
+	return p, nil
 }
 
 // redoSection lists the records that modified this page, loaded on expand so

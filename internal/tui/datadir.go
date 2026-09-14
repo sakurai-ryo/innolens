@@ -33,8 +33,8 @@ type datadir struct {
 	redoDir string
 }
 
-// scanDatadir builds the left pane tree. Shared tablespaces are listed but not
-// selectable; innolens only reads file-per-table spaces and the redo log.
+// scanDatadir builds the left pane tree. The system tablespace is listed but
+// not selectable: it has no SDI, and its pages are not what innolens shows.
 func scanDatadir(dir string) (*datadir, error) {
 	ents, err := os.ReadDir(dir)
 	if err != nil {
@@ -53,18 +53,21 @@ func scanDatadir(dir string) (*datadir, error) {
 			}
 		case !e.IsDir() && undoTablespace(name):
 			d.root.children = append(d.root.children, d.undoNode(filepath.Join(dir, name), name, entrySize(e)))
-		case !e.IsDir() && sharedTablespace(name):
+		case !e.IsDir() && strings.HasPrefix(name, "ibdata"):
 			d.root.children = append(d.root.children, &node{label: name, icon: ic.system, note: entrySize(e), dim: true})
+		case !e.IsDir() && strings.HasSuffix(name, ".ibd"):
+			// mysql.ibd, or a general tablespace: many tables in one file.
+			path := filepath.Join(dir, name)
+			if id, err := innodb.SpaceID(path); err == nil {
+				d.spaces[id] = path
+			}
+			d.root.children = append(d.root.children, &node{label: name, icon: ic.system, hkey: "shared tablespace", note: entrySize(e), data: tableRef{path}})
 		}
 	}
 	if len(d.root.children) == 0 {
 		return nil, fmt.Errorf("no tablespace found under %s", dir)
 	}
 	return d, nil
-}
-
-func sharedTablespace(name string) bool {
-	return strings.HasPrefix(name, "ibdata") || name == "mysql.ibd"
 }
 
 // undoTablespace matches the two implicit undo tablespaces and any explicit one
@@ -146,17 +149,21 @@ func createTableNode(t *innodb.Table) *node {
 }
 
 // pageTree builds the right pane: one section per B+tree plus the flat list of
-// non-index pages. Only the root of each tree is read up front.
-func pageTree(s *innodb.Space, t *innodb.Table) *node {
+// non-index pages. Only the root of each tree is read up front. The tables of
+// a shared tablespace each get a folded section of their own.
+func pageTree(s *innodb.Space, ts []*innodb.Table) *node {
 	root := &node{}
-	if t != nil && len(t.DDL) > 0 {
-		root.children = append(root.children, createTableNode(t))
+	if len(ts) == 1 {
+		root.children = tableNodes(s, ts[0])
 	}
-	for _, ix := range indexes(t) {
-		n := &node{label: fmt.Sprintf("%s (index %d)", ix.Name, ix.ID), icon: ic.index, hkey: "index tree",
-			expanded: true, data: indexRef{ix}}
-		n.children = append(n.children, pageNode(s, ix, ix.RootPage))
-		root.children = append(root.children, n)
+	if len(ts) > 1 {
+		for _, t := range ts {
+			// The clustered index stands for the table, so the pickers know
+			// which table the cursor is on before a tree is opened.
+			n := &node{label: t.Schema + "." + t.Name, icon: ic.table, hkey: "table section", data: indexRef{t.Indexes[0]}}
+			n.children = tableNodes(s, t)
+			root.children = append(root.children, n)
+		}
 	}
 	root.children = append(root.children, &node{
 		label: "Other pages",
@@ -185,12 +192,19 @@ func pageTree(s *innodb.Space, t *innodb.Table) *node {
 	return root
 }
 
-// indexes is the B+trees of a tablespace; an undo tablespace has none.
-func indexes(t *innodb.Table) []*innodb.IndexDef {
-	if t == nil {
-		return nil
+// tableNodes is the CREATE TABLE line and one section per B+tree of a table.
+func tableNodes(s *innodb.Space, t *innodb.Table) []*node {
+	var out []*node
+	if len(t.DDL) > 0 {
+		out = append(out, createTableNode(t))
 	}
-	return t.Indexes
+	for _, ix := range t.Indexes {
+		n := &node{label: fmt.Sprintf("%s (index %d)", ix.Name, ix.ID), icon: ic.index, hkey: "index tree",
+			expanded: true, data: indexRef{ix}}
+		n.children = append(n.children, pageNode(s, ix, ix.RootPage))
+		out = append(out, n)
+	}
+	return out
 }
 
 // errNode is a row that failed to load; the whole line is coloured, since there
