@@ -2,7 +2,6 @@ package innodb
 
 import (
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 )
 
@@ -90,12 +89,6 @@ func (r reader) u32(name string, off int) uint32 {
 func (r reader) u64(name string, off int) uint64 {
 	v := binary.BigEndian.Uint64(r.b[off:])
 	r.n.Add(name, off, 8, fmt.Sprint(v))
-	return v
-}
-
-func (r reader) hex(name string, off, ln int) []byte {
-	v := r.b[off : off+ln]
-	r.n.Add(name, off, ln, hex.EncodeToString(v))
 	return v
 }
 

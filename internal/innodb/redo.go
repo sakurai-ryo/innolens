@@ -32,7 +32,7 @@ const (
 	logBlockMaxNo      = 0x40000000
 	logBlockEncryptBit = 0x8000
 	// Log_format::VERSION_8_0_30, the oldest format this tool reads.
-	logFormatMin = 5
+	logFormatMin = 6
 )
 
 // Checkpoint is one of the two checkpoint headers of a redo file.

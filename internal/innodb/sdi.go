@@ -52,9 +52,11 @@ func (s *Space) ReadSDI() ([]SDIRecord, error) {
 	if no == 0 {
 		return nil, fmt.Errorf("%s: page 0 carries no SDI root page", s.Path)
 	}
-	sdiIndex.RootPage = no
 	// Descend along the leftmost node pointers to the first leaf.
-	for {
+	for depth := 0; ; depth++ {
+		if depth >= maxTreeHeight {
+			return nil, fmt.Errorf("SDI tree is deeper than %d levels: the node pointers loop", maxTreeHeight)
+		}
 		p, err := s.Page(no)
 		if err != nil {
 			return nil, err
@@ -76,7 +78,10 @@ func (s *Space) ReadSDI() ([]SDIRecord, error) {
 		no = ch[0]
 	}
 	var out []SDIRecord
-	for no != FIL_NULL {
+	for n := uint32(0); no != FIL_NULL; n++ {
+		if n >= s.NPages {
+			return nil, fmt.Errorf("SDI leaf chain is longer than the tablespace: the next pointers loop")
+		}
 		p, err := s.Page(no)
 		if err != nil {
 			return nil, err

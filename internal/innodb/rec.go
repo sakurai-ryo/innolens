@@ -129,7 +129,11 @@ func parseRec(b []byte, off int, idx *IndexDef) (*Rec, error) {
 	}
 
 	nulls := off - REC_N_NEW_EXTRA_BYTES - 1 // byte holding null bit 0
+	underflow := fmt.Errorf("record at %d: header runs below the buffer", off)
 	if r.Versioned() {
+		if nulls < 0 {
+			return nil, underflow
+		}
 		r.Version = b[nulls]
 		nulls--
 		r.Extra++
@@ -138,6 +142,9 @@ func parseRec(b []byte, off int, idx *IndexDef) (*Rec, error) {
 	nNull := idx.nullableIn(r.Version)
 	nodePtr := r.Status == REC_STATUS_NODE_PTR
 	if nodePtr {
+		if idx.NUniqueInTree > len(cols) {
+			return nil, fmt.Errorf("record at %d: index has %d unique fields but %d columns", off, idx.NUniqueInTree, len(cols))
+		}
 		cols = cols[:idx.NUniqueInTree]
 		nNull = idx.nullableIn(0)
 	}
@@ -162,6 +169,9 @@ func parseRec(b []byte, off int, idx *IndexDef) (*Rec, error) {
 				nullByte--
 				nullBit = 0
 			}
+			if nullByte < 0 {
+				return nil, underflow
+			}
 			f.NullOff, f.NullBit = nullByte, nullBit
 			isNull := b[nullByte]&(1<<nullBit) != 0
 			nullBit++
@@ -175,13 +185,16 @@ func parseRec(b []byte, off int, idx *IndexDef) (*Rec, error) {
 			f.Len = c.Fixed
 		} else {
 			if lens < 0 {
-				return nil, fmt.Errorf("record at %d: length bytes underflow", off)
+				return nil, underflow
 			}
 			l := int(b[lens])
 			f.LenOff, f.LenBytes = lens, 1
 			lens--
 			r.Extra++
 			if c.MaxLen > 255 && l&0x80 != 0 {
+				if lens < 0 {
+					return nil, underflow
+				}
 				l = (l&0x3F)<<8 | int(b[lens])
 				f.Extern = b[lens+1]&0x40 != 0
 				f.LenOff, f.LenBytes = lens, 2

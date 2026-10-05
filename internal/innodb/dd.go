@@ -287,9 +287,12 @@ func buildTable(dt *ddTable) (*Table, error) {
 					return nil, fmt.Errorf("index %s: column_opx %d out of range", di.Name, e.ColumnOpx)
 				}
 				c := cols[e.ColumnOpx]
-				if e.Length != 0xFFFFFFFF && int(e.Length) < c.MaxLen && c.Fixed == 0 {
-					// prefix index: only the first Length bytes are stored
-					c.MaxLen = int(e.Length)
+				// A prefix of a fixed-length column is fixed at the prefix
+				// length; a variable-length one keeps the column's length
+				// bytes, which InnoDB sizes by the column, not the prefix
+				// (DATA_BIG_COL).
+				if e.Length != 0xFFFFFFFF && int(e.Length) < c.Fixed {
+					c.Fixed = int(e.Length)
 				}
 				ix.Cols = append(ix.Cols, c)
 			}

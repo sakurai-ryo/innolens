@@ -189,7 +189,7 @@ func (m *lockSim) scan() ([]Lock, error) {
 	first := true
 	stopFound := false
 	var prev *Rec
-	for {
+	for hops := uint32(0); ; {
 		recs := leaf.UserRecs()
 		if pos >= len(recs) {
 			if !st.RC {
@@ -205,6 +205,9 @@ func (m *lockSim) scan() ([]Lock, error) {
 			}
 			if leaf.FIL.Next == FIL_NULL {
 				return m.out, nil
+			}
+			if hops++; hops >= m.s.NPages {
+				return m.out, fmt.Errorf("leaf chain is longer than the tablespace: the next pointers loop")
 			}
 			if leaf, err = m.leaf(leaf.FIL.Next); err != nil {
 				return m.out, err

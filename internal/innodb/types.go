@@ -206,7 +206,7 @@ func decDecimal(precision, scale int) func([]byte, *[]Step) string {
 
 func strDecoder(charset string) func([]byte, *[]Step) string {
 	switch charset {
-	case "utf8mb4", "ascii":
+	case "utf8mb4", "utf8mb3", "ascii":
 		return func(b []byte, _ *[]Step) string {
 			if !utf8.Valid(b) {
 				return hex.EncodeToString(b)
@@ -228,22 +228,8 @@ func strDecoder(charset string) func([]byte, *[]Step) string {
 	}
 }
 
-// charsetName maps the collation ids of the charsets we can print.
-func charsetName(collationID int) string {
-	switch {
-	case collationID == 45 || collationID == 46 || (collationID >= 224 && collationID <= 247) || (collationID >= 255 && collationID <= 330):
-		return "utf8mb4"
-	case collationID == 11 || collationID == 65:
-		return "ascii"
-	case collationID == 63:
-		return "binary"
-	}
-	switch collationID {
-	case 5, 8, 15, 31, 47, 48, 49, 94:
-		return "latin1"
-	}
-	return ""
-}
+// charsetName is the charset of a collation id, "" for an unknown id.
+func charsetName(collationID int) string { return collations[collationID].charset }
 
 // mbMinLen is 1 for every charset except the fixed-width UCS ones.
 func mbMinLen(collationID int) int {

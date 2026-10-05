@@ -62,7 +62,7 @@ func (r *RedoRec) RecordImage(buf []byte, page *Page, idx *IndexDef) (*Rec, erro
 		}
 		prefix = page.Data[start : start+mismatch]
 	}
-	if origin < REC_N_NEW_EXTRA_BYTES || mismatch+ins.DataLen > PageSize-FIL_PAGE_DATA_END {
+	if origin < REC_N_NEW_EXTRA_BYTES || origin >= PageSize-FIL_PAGE_DATA_END || mismatch+ins.DataLen > PageSize-FIL_PAGE_DATA_END {
 		return nil, fmt.Errorf("rebuilt record does not fit a page (origin %d, len %d)", origin, mismatch+ins.DataLen)
 	}
 	// parseRec indexes with page offsets, so rebuild inside a page-sized buffer.
