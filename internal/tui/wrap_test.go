@@ -50,3 +50,23 @@ func TestRowsFitWidth(t *testing.T) {
 		}
 	}
 }
+
+func TestTruncateWide(t *testing.T) {
+	for _, s := range []string{"山田太郎花", strings.Repeat("あ", 18), "abc山田def"} {
+		for w := 0; w <= 40; w++ {
+			got := truncate(s, w)
+			if lipgloss.Width(got) > w || !utf8.ValidString(got) || strings.ContainsRune(got, 0) {
+				t.Errorf("truncate(%q, %d) = %q", s, w, got)
+			}
+		}
+	}
+}
+
+func TestMoveEmptyList(t *testing.T) {
+	l := newList(&node{})
+	l.move(1)
+	l.move(-1)
+	if l.cur != 0 || l.sel() != nil {
+		t.Errorf("cur = %d, sel = %v", l.cur, l.sel())
+	}
+}

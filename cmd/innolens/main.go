@@ -16,6 +16,12 @@ func main() {
 	base := ""
 	if len(os.Args) == 3 {
 		base = os.Args[2]
+		// A baseline that cannot be read shows no diff, which looks the same
+		// as a page the statement did not touch.
+		if fi, err := os.Stat(base); err != nil || !fi.IsDir() {
+			fmt.Fprintf(os.Stderr, "baseline %s is not a directory\n", base)
+			os.Exit(1)
+		}
 	}
 	m, err := tui.New(os.Args[1], base)
 	if err != nil {

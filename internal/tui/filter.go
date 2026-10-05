@@ -13,7 +13,8 @@ import "strings"
 // Matched nodes are copied because the expanded flag differs between the
 // filtered view and the full tree the filter is cleared back to.
 func filterTree(root *node, q string) *node {
-	schemaQ, tableQ, dotted := strings.Cut(strings.ToLower(q), ".")
+	q = strings.ToLower(q)
+	schemaQ, tableQ, dotted := strings.Cut(q, ".")
 	out := &node{}
 	for _, c := range root.children {
 		cp := *c

@@ -279,6 +279,11 @@ func TestFilter(t *testing.T) {
 			t.Fatalf("schema. match %v missing %q", labels, want)
 		}
 	}
+	press(m, tea.KeyEsc)
+	key(t, m, "/", "U", "N", "D", "O")
+	if labels = rowLabels(&m.tables); !hasLabel(labels, "undo_001") {
+		t.Fatalf("upper-case query %v dropped a top-level file", labels)
+	}
 
 	press(m, tea.KeyEsc)
 	if m.prompt.kind != promptNone || m.query != "" {

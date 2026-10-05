@@ -371,8 +371,9 @@ func (m *Model) enter() {
 	case pageRef:
 		m.openPage(d.no)
 	case recRef:
-		m.openPage(d.no)
-		m.selectRecord(d.off)
+		if m.openPage(d.no) {
+			m.selectRecord(d.off)
+		}
 	case innodb.RollPtr:
 		// The newest version of a row is on the page itself, not in the undo log.
 		if !d.Zero() {
@@ -410,6 +411,8 @@ func (m *Model) openTable(path string) {
 	m.defs, m.page, m.lockWiz, m.findWiz = nil, nil, nil, nil
 	s, err := innodb.Open(path)
 	if err != nil {
+		// The page tree still points into the tablespace just closed.
+		m.pages, m.focus, m.pagesTitle = list{}, focusTables, "PAGES"
 		m.status = status{err: err.Error()}
 		return
 	}
@@ -463,17 +466,18 @@ func (m *Model) loadRedoOnce() (*redoIndex, error) {
 	return ri, nil
 }
 
-func (m *Model) openPage(no uint32) {
+func (m *Model) openPage(no uint32) bool {
 	s := m.space
 	m.pagePath = s.Path
 	m.pageOpen = func() (*innodb.Page, error) { return s.Page(no) }
 	p, err := m.pageOpen()
 	if err != nil {
 		m.status.err = err.Error()
-		return
+		return false
 	}
 	m.diff, m.rep = nil, nil
 	m.showPage(s.ID, innodb.TableFor(m.defs, p), p, "")
+	return true
 }
 
 // jumpToPage opens the page a redo record modified. The tablespace is closed
@@ -580,7 +584,7 @@ func (m *Model) followSelection() {
 	if !ok || !n.hasOff || in.Len == 0 {
 		return
 	}
-	h := m.paneHeight()
+	h := m.hexRows()
 	line := in.Off / 16
 	if line < m.hexTop {
 		m.hexTop = line
@@ -673,16 +677,21 @@ func (m *Model) statusBar() string {
 
 func (m *Model) footer() string {
 	keys := "↑↓ move   ←→ fold   enter open   esc back   r reload   ? help"
+	// The filter stays open behind the pages a match was opened into.
+	kind := m.prompt.kind
+	if m.focus != promptOwner(kind) {
+		kind = promptNone
+	}
 	switch {
-	case m.prompt.kind == promptFilter:
+	case kind == promptFilter:
 		keys = "type to filter (db.table)   ↑↓ move   ←→ fold   enter open   esc clear"
-	case m.prompt.kind == promptFind && m.findWiz.insert:
+	case kind == promptFind && m.findWiz.insert:
 		keys = "type the key   enter insert   esc back"
-	case m.prompt.kind == promptFind:
+	case kind == promptFind:
 		keys = "type the key   enter search   esc back"
-	case m.prompt.kind == promptView:
+	case kind == promptView:
 		keys = "read view trx_id: " + m.prompt.text + "▏   enter apply   esc cancel"
-	case m.prompt.kind == promptLock:
+	case kind == promptLock:
 		keys = "type the " + m.lockWiz.lockValueLabel() + "   enter next   esc back"
 	case m.picking():
 		keys = "↑↓ move   enter choose   esc back"

@@ -110,13 +110,7 @@ func (l *list) sel() *node {
 }
 
 func (l *list) move(d int) {
-	l.cur += d
-	if l.cur < 0 {
-		l.cur = 0
-	}
-	if l.cur >= len(l.rows) {
-		l.cur = len(l.rows) - 1
-	}
+	l.cur = max(min(l.cur+d, len(l.rows)-1), 0)
 }
 
 func (l *list) expand() {
@@ -378,5 +372,5 @@ func truncate(s string, w int) string {
 	if w <= 1 {
 		return strings.Repeat("…", max(w, 0))
 	}
-	return string([]rune(s)[:w-1]) + "…"
+	return ansi.Truncate(s, w, "…")
 }
