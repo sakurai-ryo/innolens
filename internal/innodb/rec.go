@@ -50,6 +50,7 @@ type IndexDef struct {
 	NUniqueInTree int   // key fields stored in node pointer records
 	NKey          int   // columns the index is declared on, before the PK a secondary index appends
 	Unique        bool  // PRIMARY or UNIQUE: one row per key, so an exact match needs no gap lock
+	Desc          bool  // the first key column is DESC
 }
 
 func (d *IndexDef) nullableIn(v uint8) int {

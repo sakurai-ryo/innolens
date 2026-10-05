@@ -63,8 +63,9 @@ type InsertPlan struct {
 	// columns are sized by their neighbour.
 	Size int
 	// Dup is the record that already holds the key on a single-column unique
-	// index. When it is delete-marked the insert rewrites it in place instead
-	// of adding a record, so nothing below applies.
+	// index. On the clustered index it may be delete-marked: the insert then
+	// rewrites it in place instead of adding a record, so nothing below
+	// applies.
 	Dup *Rec
 	// Blocked is the lock, among those the caller passed in, the insert
 	// would wait for: a gap lock on Next that its insert intention lock
@@ -134,11 +135,22 @@ func (s *Space) SimulateInsert(t *Table, idx *IndexDef, key string, locks []Lock
 	// Only a whole key can be a duplicate; on a composite one the typed
 	// column may be shared by rows that differ in the rest.
 	if st.Found && idx.Unique && idx.NKey == 1 {
-		pl.Dup = recs[pos]
-		pl.Blocked = lockOn(locks, idx, leaf.No, pl.Dup.HeapNo, func(mode string) bool {
-			return strings.HasPrefix(mode, "X") && !strings.HasSuffix(mode, ",GAP")
-		})
-		return pl, nil
+		dup := pos
+		if !pl.Clustered {
+			// A delete-marked entry of a secondary index belongs to some
+			// other row, not yet purged: the new row gets an entry of its
+			// own beside it.
+			for dup < len(recs) && recs[dup].Deleted() && compareKey(key, recKey(recs[dup])) == 0 {
+				dup++
+			}
+		}
+		if dup < len(recs) && compareKey(key, recKey(recs[dup])) == 0 {
+			pl.Dup = recs[dup]
+			pl.Blocked = lockOn(locks, idx, leaf.No, pl.Dup.HeapNo, func(mode string) bool {
+				return strings.HasPrefix(mode, "X") && !strings.HasSuffix(mode, ",GAP")
+			})
+			return pl, nil
+		}
 	}
 	// Equal keys on a non-unique index are told apart by the primary key
 	// they carry, which is not typed: the new one is put after them.

@@ -62,16 +62,16 @@ func insertNodes(pl *innodb.InsertPlan) []*node {
 		// The duplicate check locks the record it found: the clustered index
 		// takes the record alone, a secondary unique index scans with
 		// next-key locks under REPEATABLE READ.
-		lock, by := "S,REC_NOT_GAP lock on the record", "row_ins_clust_index_entry_by_modify"
+		lock := "S,REC_NOT_GAP lock on the record"
 		if !pl.Clustered {
-			lock, by = "S next-key lock on the record (record-only under READ COMMITTED)", "row_ins_sec_index_entry_by_modify"
+			lock = "S next-key lock on the record (record-only under READ COMMITTED)"
 		}
 		n := add("duplicate key", lock+", then ER_DUP_ENTRY",
 			"a unique index looks the key up before inserting, and holds what it finds until the statement ends")
 		n.color = colDanger
 		if pl.Dup.Deleted() {
 			n.value = "the record is delete-marked: it is rewritten in place, no record is added"
-			n.note = by + ": the delete mark comes off and the columns are updated, the old version going to undo"
+			n.note = "row_ins_clust_index_entry_by_modify: the delete mark comes off and the columns are updated, the old version going to undo"
 			n.color = colIndex
 		}
 		if pl.Blocked != nil {

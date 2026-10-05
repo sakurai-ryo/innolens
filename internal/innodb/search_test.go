@@ -74,3 +74,20 @@ func TestDescend(t *testing.T) {
 		})
 	}
 }
+
+func TestCompareKeyNull(t *testing.T) {
+	for _, c := range []struct {
+		want, got string
+		cmp       int
+	}{
+		{"5", "NULL", 1},
+		{"NULL", "5", -1},
+		{"NULL", "NULL", 0},
+		{"", "NULL", -1},
+		{"10", "9", 1},
+	} {
+		if got := compareKey(c.want, c.got); got != c.cmp {
+			t.Errorf("compareKey(%q, %q) = %d, want %d", c.want, c.got, got, c.cmp)
+		}
+	}
+}

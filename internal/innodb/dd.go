@@ -246,6 +246,7 @@ func buildTable(dt *ddTable) (*Table, error) {
 		// DB_TRX_ID to. It is not always PRIMARY: with no primary key the
 		// first UNIQUE NOT NULL index is promoted, as in mysql.index_column_usage,
 		// and its key is then what stands before DB_TRX_ID.
+		ix.Desc = len(di.Elements) > 0 && di.Elements[0].Order == 3
 		clust := i == 0 && trxIDPos(dt.Columns, di.Elements) >= 0
 		nKey := 0
 		if clust {

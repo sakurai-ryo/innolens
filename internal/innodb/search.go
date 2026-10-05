@@ -64,6 +64,10 @@ func (s *Space) descend(idx *IndexDef, key string, ge bool) ([]DescentStep, *Ind
 	if idx == nil {
 		return nil, nil, 0, fmt.Errorf("no index definition to search with")
 	}
+	// ponytail: keys are compared ascending only, flip compareKey to support it.
+	if idx.Desc {
+		return nil, nil, 0, fmt.Errorf("%s is a descending index, which searches do not support", idx.Name)
+	}
 	var out []DescentStep
 	for no := idx.RootPage; ; {
 		p, err := s.Page(no)
@@ -117,6 +121,16 @@ func recKey(r *Rec) string {
 
 // compareKey orders the key being looked for against a key on a page.
 func compareKey(want, got string) int {
+	// NULL sorts first in InnoDB. ponytail: a string column holding the text
+	// NULL is taken for it, compare decoded fields if that matters.
+	switch {
+	case want == got:
+		return 0
+	case want == "" || want == "NULL":
+		return -1
+	case got == "NULL":
+		return 1
+	}
 	a, err1 := strconv.ParseFloat(want, 64)
 	b, err2 := strconv.ParseFloat(got, 64)
 	if err1 == nil && err2 == nil {

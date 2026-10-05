@@ -48,6 +48,9 @@ func ParseLockStmt(text string) (LockStmt, error) {
 		if lo == "" || hi == "" {
 			return st, fmt.Errorf("lock: a range needs both ends: a..b")
 		}
+		if compareKey(lo, hi) > 0 {
+			return st, fmt.Errorf("lock: %s is past %s, so the range is empty and nothing is locked", lo, hi)
+		}
 		st.Lo, st.Hi, st.LoIncl, st.HiIncl = lo, hi, true, true
 	case len(f) == 2 && f[0] == "=":
 		st.Lo, st.Hi, st.LoIncl, st.HiIncl, st.Eq = f[1], f[1], true, true, true
@@ -238,7 +241,10 @@ func (m *lockSim) scan() ([]Lock, error) {
 					return m.out, err
 				}
 			}
-			if uniqueSearch {
+			// As under REPEATABLE READ, only the clustered index stops at a
+			// delete-marked match: a unique secondary index can hold the same
+			// key again for another row.
+			if uniqueSearch && (clustered || !r.Deleted()) {
 				return m.out, nil
 			}
 			pos++
@@ -325,12 +331,39 @@ func (m *lockSim) row(r *Rec) error {
 	if err != nil {
 		return err
 	}
-	recs := cl.UserRecs()
-	if pos >= len(recs) || compareKey(key, recKey(recs[pos])) != 0 {
-		return fmt.Errorf("%s has no record with %s = %s, which %s points at", m.clust.Name, m.clust.Cols[0].Name, key, m.idx.Name)
+	// The descent goes by the first PK column; the rest of a composite PK
+	// picks the row among the records that share it, which can run on into
+	// the next page.
+	pk := m.clust.Cols[:m.clust.NUniqueInTree]
+	for hops := uint32(0); ; {
+		recs := cl.UserRecs()
+		for ; pos < len(recs) && compareKey(key, recKey(recs[pos])) == 0; pos++ {
+			if samePK(pk, r, recs[pos]) {
+				m.add(cl, recs[pos], lockRecNotGap, "the row behind the secondary index record: a secondary index scan locks it too")
+				return nil
+			}
+		}
+		if pos < len(recs) || cl.FIL.Next == FIL_NULL {
+			break
+		}
+		if hops++; hops >= m.s.NPages {
+			return fmt.Errorf("leaf chain is longer than the tablespace: the next pointers loop")
+		}
+		if cl, err = m.leaf(cl.FIL.Next); err != nil {
+			return err
+		}
+		pos = 0
 	}
-	m.add(cl, recs[pos], lockRecNotGap, "the row behind the secondary index record: a secondary index scan locks it too")
-	return nil
+	return fmt.Errorf("%s has no record with %s = %s, which %s points at", m.clust.Name, m.clust.Cols[0].Name, key, m.idx.Name)
+}
+
+func samePK(pk []Col, sec, clust *Rec) bool {
+	for _, c := range pk {
+		if compareKey(fieldValue(sec, c.Name), fieldValue(clust, c.Name)) != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func (m *lockSim) leaf(no uint32) (*IndexPage, error) {
